@@ -1,0 +1,13 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ZooKeeper Server" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="org.apache.zookeeper.server.quorum.QuorumPeerMain" />
+    <option name="INCLUDE_PROVIDED_SCOPE" value="true" />
+    <module name="zookeeper" />
+    <option name="PROGRAM_PARAMETERS" value="$PROJECT_DIR$/conf/zoo.cfg" />
+    <option name="VM_PARAMETERS" value="-Dzookeeper.extendedTypesEnabled=true -Dzookeeper.admin.enableServer=false" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

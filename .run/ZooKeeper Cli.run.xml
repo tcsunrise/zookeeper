@@ -1,0 +1,13 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ZooKeeper Cli" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="org.apache.zookeeper.ZooKeeperMain" />
+    <option name="INCLUDE_PROVIDED_SCOPE" value="true" />
+    <module name="zookeeper" />
+    <option name="PROGRAM_PARAMETERS" value="-server 127.0.0.1:2181" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="VM_PARAMETERS" value="-Dlogback.configurationFile=conf/logback-client.xml" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
