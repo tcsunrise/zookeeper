@@ -18,10 +18,14 @@ primitives, such as queues and locks. As you will see, this is possible
 because ZooKeeper imposes an overall order on updates, and has mechanisms
 to expose this ordering.
 
+> 异步通知, 同步一致性原语, 比如：队列和锁。更新操作的全排序
+
 Note that the recipes below attempt to employ best practices. In
 particular, they avoid polling, timers or anything else that would result
 in a "herd effect", causing bursts of traffic and limiting
 scalability.
+
+> 惊群效应
 
 There are many useful functions that can be imagined that aren't
 included here - revocable read-write priority locks, as just one example.
@@ -31,9 +35,11 @@ as event handles or queues, a more practical means of performing the same
 function. In general, the examples in this section are designed to
 stimulate thought.
 
+
+
 ### Important Note About Error Handling
 
-When implementing the recipes you must handle recoverable exceptions
+When implementing the recipes you must handle **recoverable exceptions**
 (see the [FAQ](https://cwiki.apache.org/confluence/display/ZOOKEEPER/FAQ)). In
 particular, several of the recipes employ sequential ephemeral
 nodes. When creating a sequential ephemeral node there is an error case in
@@ -43,17 +49,26 @@ session is still valid and, thus, the node is not removed. The implication is
 that it is difficult for the client to know if its node was created or not. The
 recipes below include measures to handle this.
 
+> 顺序的临时节点，客户端不知道是否节点已经创建成功
+
+
 ### Out of the Box Applications: Name Service, Configuration, Group Membership
+
+> 命名服务和配置服务，是典型的应用场景。
 
 Name service and configuration are two of the primary applications
 of ZooKeeper. These two functions are provided directly by the ZooKeeper
 API.
+
+> 成员服务：一个节点下面挂着很多临时节点
 
 Another function directly provided by ZooKeeper is _group
 membership_. The group is represented by a node. Members of the
 group create ephemeral nodes under the group node. Nodes of the members
 that fail abnormally will be removed automatically when ZooKeeper detects
 the failure.
+
+> 栅栏
 
 ### Barriers
 
@@ -74,6 +89,8 @@ pseudo code:
 1. When the watch event is triggered, the client reissues the
    **exists( )** call, again waiting until
    the barrier node is removed.
+
+> 双栅栏
 
 #### Double Barriers
 

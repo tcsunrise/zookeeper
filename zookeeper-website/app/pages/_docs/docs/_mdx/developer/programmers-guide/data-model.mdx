@@ -3,12 +3,19 @@ title: "Data Model"
 description: "Explains ZooKeeper's hierarchical namespace of znodes, including data access rules, ephemeral and sequence nodes, container nodes, TTL nodes, and the stat structure."
 ---
 
+1. 节点的继承式命名空间
+2. 数据访问规则
+3. 临时和顺序节点
+4. 容器节点
+5. TTL节点
+6. 数据统计结构
+
 ZooKeeper has a hierarchal namespace, much like a distributed file
 system. The only difference is that each node in the namespace can have
 data associated with it as well as children. It is like having a file
 system that allows a file to also be a directory. Paths to nodes are
 always expressed as canonical, absolute, slash-separated paths; there are
-no relative reference. Any unicode character can be used in a path subject
+no relative reference.（只有绝对路径，没有相对路径） Any unicode character can be used in a path subject
 to the following constraints:
 
 - The null character (\\u0000) cannot be part of a path name. (This
@@ -20,11 +27,13 @@ to the following constraints:
   \\uFFF0 - uFFFF.
 - The "." character can be used as part of another name, but "."
   and ".." cannot alone be used to indicate a node along a path,
-  because ZooKeeper doesn't use relative paths. The following would be
+  because ZooKeeper doesn't use relative paths（不使用相对路径）. The following would be
   invalid: "/a/b/./c" or "/a/b/../c".
 - The token "zookeeper" is reserved.
 
 ## ZNodes
+
+> Watches、Data Access、Ephemeral Nodes
 
 Every node in a ZooKeeper tree is referred to as a
 _znode_. Znodes maintain a stat structure that
@@ -61,7 +70,7 @@ found in the section
 ### Data Access
 
 The data stored at each znode in a namespace is read and written
-atomically. Reads get all the data bytes associated with a znode and a
+atomically.(每个节点数据的读写都是原子的？) Reads get all the data bytes associated with a znode and a
 write replaces all the data. Each node has an Access Control List
 (ACL) that restricts who can do what.
 
