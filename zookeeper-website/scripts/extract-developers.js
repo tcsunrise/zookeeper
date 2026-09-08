@@ -18,7 +18,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 /**
  * Extracts a field value from a developer XML block
@@ -107,7 +107,9 @@ export function main() {
   console.log(`Developers data written to ${outputPath}`);
 }
 
-// Run main if this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run main if this file is executed directly. Compare via pathToFileURL so the
+// entry check works on Windows, where process.argv[1] is a native path
+// (e.g. D:\...) rather than a POSIX path.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main();
 }

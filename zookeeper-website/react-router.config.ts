@@ -48,7 +48,9 @@ export default {
       for await (const entry of glob("**/*.mdx", {
         cwd: "app/pages/_docs/docs/_mdx"
       })) {
-        paths.push(getUrl(getSlugs(entry)));
+        // glob yields OS-native separators; normalize to "/" so getSlugs
+        // splits path segments correctly on Windows.
+        paths.push(getUrl(getSlugs(entry.replaceAll("\\", "/"))));
       }
     }
     return paths;

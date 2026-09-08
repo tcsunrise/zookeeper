@@ -75,7 +75,10 @@ function runCommand(command: string, args: string[], env: NodeJS.ProcessEnv) {
   const result = spawnSync(command, args, {
     cwd: ROOT,
     env,
-    stdio: "inherit"
+    stdio: "inherit",
+    // Run through a shell so command resolution works on Windows, where
+    // `npm`/`npx` are `.cmd` shims that spawnSync cannot exec directly.
+    shell: true
   });
 
   if (result.error) {
