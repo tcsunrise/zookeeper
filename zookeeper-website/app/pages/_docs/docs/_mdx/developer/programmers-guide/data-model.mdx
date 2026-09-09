@@ -10,6 +10,25 @@ description: "Explains ZooKeeper's hierarchical namespace of znodes, including d
 5. TTL节点
 6. 数据统计结构
 
+简单介绍数据模型：
+(1) 节点
+  路径
+  数据
+  ACL
+  Stat
+  临时
+  顺序
+  容器
+  TTL
+(2) 继承式命名空间
+(3) 数据访问规则 ACL ，修改的时候需要带上版本号
+(4) 临时节点
+(5) 顺序节点
+(6) 容器节点
+(7) TTL节点
+(8) 监视器
+
+
 ZooKeeper has a hierarchal namespace, much like a distributed file
 system. The only difference is that each node in the namespace can have
 data associated with it as well as children. It is like having a file

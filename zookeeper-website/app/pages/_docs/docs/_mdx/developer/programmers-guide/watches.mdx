@@ -3,6 +3,10 @@ title: "Watches"
 description: "Describes ZooKeeper watches — one-time event triggers sent to clients when znode data or children change — including watch semantics, guarantees, and removal."
 ---
 
+
+(1) 三个读操作支持设置监视器
+(2) 监视器 发送给设置监视器的客户端的一次性事件。监视器事件是发送给客户端的
+
 All of the read operations in ZooKeeper - **getData()**, **getChildren()**, and **exists()** - have the option of setting a watch as a
 side effect. Here is ZooKeeper's definition of a watch: a watch event is
 one-time trigger, sent to the client that set the watch, which occurs when
@@ -16,6 +20,8 @@ to consider in this definition of a watch:
   event for /znode1. If /znode1 changes again, no watch event will be
   sent unless the client has done another read that sets a new
   watch.
+   客户端A 发出请求->服务器处理->服务器发出响应->客户端接收code
+   客户端B                                                    收到监听器事件
 - **Sent to the client**
   This implies that an event is on the way to the client, but may
   not reach the client before the successful return code to the change
@@ -131,11 +137,16 @@ guarantees:
   again. (You may not care, but at least realize it may
   happen.)
 
+注册-收到----->查数据+注册
+          这里可能已经发生了一次修改
+
 - A watch object, or function/context pair, will only be
   triggered once for a given notification. For example, if the same
   watch object is registered for an exists and a getData call for the
   same file and that file is then deleted, the watch object would
   only be invoked once with the deletion notification for the file.
+
+一个watch只会被当作一次事件，不会被触发两次。
 
 - When you disconnect from a server (for example, when the
   server fails), you will not get any watches until the connection

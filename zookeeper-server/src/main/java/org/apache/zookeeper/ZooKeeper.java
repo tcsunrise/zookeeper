@@ -1947,11 +1947,14 @@ public class ZooKeeper implements AutoCloseable {
 
         final String serverPath = prependChroot(clientPath);
 
+        // 操作码定义
         RequestHeader h = new RequestHeader();
         h.setType(ZooDefs.OpCode.exists);
+        // 是否存在的请求
         ExistsRequest request = new ExistsRequest();
         request.setPath(serverPath);
         request.setWatch(watcher != null);
+        // 这里为什么是SetData响应，为了复用？？
         SetDataResponse response = new SetDataResponse();
         ReplyHeader r = cnxn.submitRequest(h, request, response, wcb);
         if (r.getErr() != 0) {
@@ -2225,6 +2228,9 @@ public class ZooKeeper implements AutoCloseable {
     }
 
     /**
+     * [set]
+     *
+     *
      * Set the data for the node of the given path if such a node exists and the
      * given version matches the version of the node (if the given version is
      * -1, it matches any node's versions). Return the stat of the node.
