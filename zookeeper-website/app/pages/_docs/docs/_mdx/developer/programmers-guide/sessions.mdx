@@ -17,6 +17,10 @@ ZooKeeper client:
 
 ![State transitions](/docs-images/state_dia.jpg)
 
+
+> CONNECTING CONNECTED CLOSED
+
+
 To create a client session the application code must provide
 a connection string containing a comma separated list of host:port pairs,
 each corresponding to a ZooKeeper server (e.g. "127.0.0.1:4545" or
@@ -26,6 +30,9 @@ it. If this connection fails, or if the client becomes
 disconnected from the server for any reason, the client will
 automatically try the next server in the list, until a connection
 is (re-)established.
+
+
+> 客户端需要一个连接串，代码会自动连接到任意一个服务器
 
 **Added in 3.2.0**: An
 optional "chroot" suffix may also be appended to the connection
@@ -44,6 +51,9 @@ each user can code his/her application as if it were rooted at
 "/", while actual location (say /app/a) could be determined at
 deployment time.
 
+
+》 3.2.0 版本后 支持指定连接的根节点，用于租户等场景
+
 When a client gets a handle to the ZooKeeper service,
 ZooKeeper creates a ZooKeeper session, represented as a 64-bit
 number, that it assigns to the client. If the client connects to a
@@ -55,6 +65,8 @@ id when the client establishes the session. The client sends this
 password with the session id whenever it reestablishes the session
 with a new server.
 
+> 客户端获得服务句柄后，会得到一个服务端session，并且还会获得一个密码，用于重连zk服务
+
 One of the parameters to the ZooKeeper client library call
 to create a ZooKeeper session is the session timeout in
 milliseconds. The client sends a requested timeout, the server
@@ -63,6 +75,10 @@ implementation requires that the timeout be a minimum of 2 times
 the tickTime (as set in the server configuration) and a maximum of
 20 times the tickTime. The ZooKeeper client API allows access to
 the negotiated timeout.
+
+> Session 超时时间的配置，客户端可以指定超时时间。
+> 最小是2倍的tick，最大20倍tick
+
 
 When a client (session) becomes partitioned from the ZK
 serving cluster it will begin searching the list of servers that
@@ -78,6 +94,10 @@ will handle reconnect for you. In particular we have heuristics
 built into the client library to handle things like "herd effect",
 etc... Only create a new session when you are notified of session
 expiration (mandatory).
+
+> 断开重连
+> 1. 会话未超时，connected；2. 会话已经超时，expired
+
 
 Session expiration is managed by the ZooKeeper cluster
 itself, not by the client. When the ZK client establishes a
@@ -115,6 +135,8 @@ the expired session's watcher:
    the cluster, it is then notified of the
    expiration
 
+> 当客户端重连到服务时，如果会话已经超时，客户端会收到通知。
+
 Another parameter to the ZooKeeper session establishment
 call is the default watcher. Watchers are notified when any state
 change occurs in the client. For example if the client loses
@@ -125,6 +147,8 @@ events are sent to the watcher by the client lib). In the case of
 a new connection, the first event sent to the watcher is typically
 the session connection event.
 
+> watch 参数
+
 The session is kept alive by requests sent by the client. If
 the session is idle for a period of time that would timeout the
 session, the client will send a PING request to keep the session
@@ -134,6 +158,8 @@ client to verify that its connection to the ZooKeeper server is
 still active. The timing of the PING is conservative enough to
 ensure reasonable time to detect a dead connection and reconnect
 to a new server.
+
+> 客户端向服务发送PING ，维持会话和连接
 
 Once a connection to the server is successfully established
 (connected) there are basically two cases where the client lib generates
@@ -270,3 +296,22 @@ when _localSessionsUpgradingEnabled_ is enable:
     Otherwise, the client will get session expired because the quorum hasn’t know about this session yet.
     If the client also tries to connect back to A again, the session is already removed from local session tracker.
     So A will need to send a validation packet to the leader. The outcome should be the same as B depending on the timing of the request.
+
+
+
+> 会话 Session
+
+1. handle 句柄 ，开始处于CONNECTING ，连接上一台服务器之后，为 CONNECTED，最终处于 CLOSED
+2. 连接串 、超时时间、监视器 Watchers
+3. 两层会话模型：本地会话、全局会话；本地可以升级全局会话
+4. 会话的创建是全局的，由主节点管理，需要多数节点会话创建成功？
+5. 会话是逻辑上的，和一台服务器断开之后，连接到集群中其它机器，会话会继续。
+6. 会话的超时时间是2~20倍的tickTime
+7. 客户端需要连接服务器发送心跳，以告知服务器其仍在活跃，同时，其连接的节点会通知主节点，会话仍然有效
+8. 会话是由服务端管理的
+9. 客户端可以获得sessionId和pwd
+10. 本地事务可以升级全局事务，可以禁止升级
+
+org.apache.zookeeper.server.quorum.QuorumPeer.LearnerType
+org.apache.zookeeper.server.quorum.QuorumPeer.ServerState
+
