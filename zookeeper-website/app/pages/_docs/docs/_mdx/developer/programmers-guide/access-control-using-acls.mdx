@@ -19,7 +19,7 @@ particular it does not apply to children. For example, if
 _/app_ is only readable by ip:172.16.16.1 and
 _/app/status_ is world readable, anyone will
 be able to read _/app/status_; ACLs are not
-recursive.
+recursive. ACLs不是递归的。只对当前节前有效，对子节点无效。
 
 ZooKeeper supports pluggable authentication schemes. Ids are
 specified using the form _scheme:expression_,
@@ -105,6 +105,7 @@ ZooKeeper has the following built in schemes:
   This scheme is provided as a convenience as it is a common use-case for
   a user to create a znode and then restrict access to that znode to only that user.
   If there is no authenticated user, setting an ACL with the auth scheme will fail.
+  用在需要创建节点，而且这个节点只有当前客户端可以访问的情形；必须先认证，才能使用这个auth方式
 - **digest** uses
   a _username:password_ string to generate
   MD5 hash which is then used as an ACL ID
@@ -126,6 +127,9 @@ ZooKeeper has the following built in schemes:
   X500 Principal name of a client. When using the secure port, clients
   are automatically authenticated and their auth info for the x509 scheme
   is set.
+
+org.apache.zookeeper.ZooDefs.Perms
+
 
 ### ZooKeeper C client API
 

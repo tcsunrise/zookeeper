@@ -3,6 +3,12 @@ title: "Consistency Guarantees"
 description: "Details ZooKeeper's consistency guarantees: sequential consistency, atomicity, single system image, reliability, and timeliness, and how they compare to other distributed systems."
 ---
 
+- 顺序一致性
+- 原子性
+- 单一系统镜像
+- 可靠性
+- 时间线
+
 ZooKeeper is a high performance, scalable service. Both reads and
 write operations are designed to be fast, though reads are faster than
 writes. The reason for this is that in the case of reads, ZooKeeper can
@@ -11,17 +17,17 @@ guarantees:
 
 - _Sequential Consistency_ :
   Updates from a client will be applied in the order that they
-  were sent.
+  were sent. 客户端的更新是顺序执行的
 
 - _Atomicity_ :
   Updates either succeed or fail — there are no partial
-  results.
+  results. 更新是原子的
 
 - _Single System Image_ :
   A client will see the same view of the service regardless of
   the server that it connects to. i.e., a client will never see an
   older view of the system even if the client fails over to a
-  different server with the same session.
+  different server with the same session. 会话转移之后也不会看到旧的数据
 
 - _Reliability_ :
   Once an update has been applied, it will persist from that
