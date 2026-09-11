@@ -62,26 +62,17 @@ public class ChrootTest extends ClientBase {
 
     @Test
     public void testChrootSynchronous() throws IOException, InterruptedException, KeeperException {
-        ZooKeeper zk1 = createClient();
-        try {
-            zk1.create("/ch1", null, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-        } finally {
-            if (zk1 != null) {
-                zk1.close();
-            }
-        }
-        ZooKeeper zk2 = createClient(hostPort + "/ch1");
-        try {
-            assertEquals("/ch2", zk2.create("/ch2", null, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT));
-        } finally {
-            if (zk2 != null) {
-                zk2.close();
-            }
+
+        try (ZooKeeper zk = createClient()) {
+            zk.create("/ch1", null, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
         }
 
-        zk1 = createClient();
-        zk2 = createClient(hostPort + "/ch1");
-        try {
+        try (ZooKeeper zk = createClient(hostPort + "/ch1");) {
+            assertEquals("/ch2", zk.create("/ch2", null, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT));
+        }
+
+        try (ZooKeeper zk1 = createClient();
+             ZooKeeper zk2 = createClient(hostPort + "/ch1")) {
             // check get
             MyWatcher w1 = new MyWatcher("/ch1");
             assertNotNull(zk1.exists("/ch1", w1));
@@ -126,13 +117,6 @@ public class ChrootTest extends ClientBase {
             assertNull(zk1.exists("/ch1", false));
             assertNull(zk1.exists("/ch1/ch2", false));
             assertNull(zk2.exists("/ch2", false));
-        } finally {
-            if (zk1 != null) {
-                zk1.close();
-            }
-            if (zk2 != null) {
-                zk2.close();
-            }
         }
     }
 
