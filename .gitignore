@@ -12,3 +12,4 @@ src/java/lib/ivy-*
 .idea
 
 ide-lib/
+out/
