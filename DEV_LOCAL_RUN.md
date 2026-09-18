@@ -123,6 +123,68 @@ bin\zkCli.cmd -server 127.0.0.1:2181 ls / :: 客户端
 
 ---
 
+## 核心原理阅读 / 断点路线
+
+> 3.5.5 是「Maven 可调试 + 核心齐全 + 外围未臃肿」的平衡版本。学原理建议**先跳过**
+> reconfig（动态重配置）、AdminServer、TTL/Container 节点——它们是 3.5 相对 3.4 多出来的干扰项，主线看懂后再回头补。全部核心类都在
+`zookeeper-server` 模块。
+
+推荐用 IDEA Debug 启 Server（standalone 即可），在下列类打断点，从 client 敲一条 `create /x v` 单步走完整条链路。
+
+### 1. 启动与角色状态机
+
+| 关注点                              | 类 / 入口                                                  |
+|----------------------------------|---------------------------------------------------------|
+| 集群入口                             | `server.quorum.QuorumPeerMain`                          |
+| 角色状态机（LOOKING/FOLLOWING/LEADING） | `server.quorum.QuorumPeer#run()`                        |
+| 单机入口（最简，先看这个）                    | `server.ZooKeeperServerMain` → `server.ZooKeeperServer` |
+
+### 2. 选举（Leader Election）
+
+| 关注点     | 类 / 方法                                             |
+|---------|----------------------------------------------------|
+| 快速选举主流程 | `server.quorum.FastLeaderElection#lookForLeader()` |
+
+### 3. ZAB 同步与广播
+
+| 关注点        | 类                                                                     |
+|------------|-----------------------------------------------------------------------|
+| Leader 端   | `server.quorum.Leader`、`server.quorum.LearnerHandler`（每个 follower 一个） |
+| Follower 端 | `server.quorum.Follower`                                              |
+
+### 4. 写请求处理流水线（最值得单步）
+
+各角色的处理器链在对应 `*ZooKeeperServer#setupRequestProcessors()` 里组装：
+
+- **Leader**（`server.quorum.LeaderZooKeeperServer`）：
+  `PrepRequestProcessor → ProposalRequestProcessor → CommitProcessor → FinalRequestProcessor`
+  （`ProposalRequestProcessor` 旁挂 `SyncRequestProcessor` 负责落盘 + 发 ACK）
+- **Follower**（`server.quorum.FollowerZooKeeperServer`）：
+  `FollowerRequestProcessor → CommitProcessor → FinalRequestProcessor`，另有 `SyncRequestProcessor` 支线
+- **Standalone**（`server.ZooKeeperServer`）：
+  `PrepRequestProcessor → SyncRequestProcessor → FinalRequestProcessor`
+
+真正把变更写进内存树的是链尾 `server.FinalRequestProcessor`——想看「命令如何变成数据」，断点打这里最直观。
+
+### 5. 持久化（快照 + 事务日志）
+
+| 关注点                | 类                               |
+|--------------------|---------------------------------|
+| 事务日志               | `server.persistence.FileTxnLog` |
+| 快照                 | `server.persistence.FileSnap`   |
+| 内存数据树              | `server.DataTree`               |
+| 内存库（树 + 会话 + 提交日志） | `server.ZKDatabase`             |
+
+### 6. 会话管理
+
+| 关注点       | 类                           |
+|-----------|-----------------------------|
+| 会话超时 / 分桶 | `server.SessionTrackerImpl` |
+
+> 建议顺序：先单机跑通 **4 → 5 → 6**（请求怎么处理、怎么落盘、会话怎么维护），再切集群看 **1 → 2 → 3**（选举与 ZAB）。
+
+---
+
 ## 常见坑
 
 1. **`No snapshot found, but there are log entries`**：dataDir 残留了旧版本事务日志但无快照。清空 `D:/data/zookeeper` 后重启。
