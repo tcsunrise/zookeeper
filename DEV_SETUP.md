@@ -97,10 +97,22 @@ ant compile
 
 ### 4.1 准备依赖 jar 目录
 
-不要直接让 IDE 指向 `build/lib`（里面可能混着其它版本残留的 jar，`zookeeper-x.x.x.jar` 会盖住你的源码）。单独准备一个干净目录，放 3 个 jar：
+不要直接让 IDE 指向 `build/lib`（里面可能混着其它版本残留的 jar，`zookeeper-x.x.x.jar` 会盖住你的源码）。单独准备一个干净目录，放 jar：
 
-- `log4j-1.2.15.jar`、`jline-0.9.94.jar` —— 来自 `build/lib/`（`ant compile` 后即有）
-- `junit-4.8.1.jar` —— 来自 `build/test/lib/`，**需先执行 `ant ivy-retrieve-test`**；仅在你要编辑测试源码（`src/java/test`）时才需要
+| jar | 来自 | 何时需要 | 前置命令 |
+|-----|------|----------|----------|
+| `log4j-1.2.15.jar` | `build/lib/` | 编译主源码必需 | `ant compile` |
+| `jline-0.9.94.jar` | `build/lib/` | 编译主源码必需 | `ant compile` |
+| `junit-4.8.1.jar` | `build/test/lib/` | **仅编辑测试源码时才需要** | `ant ivy-retrieve-test` |
+
+> 🚩 **最常见的坑**：直接 `copy build\test\lib\junit-4.8.1.jar` 会报「系统找不到指定的文件」。
+> 因为 `ant compile` **不拉测试依赖**，`build/test/lib/` 尚不存在。**复制 junit 前必须先执行：**
+>
+> ```
+> ant ivy-retrieve-test
+> ```
+>
+> 如果你只想编辑 server/client 主源码，**跳过 junit 那一行即可**，只要 log4j + jline 两个 jar。
 
 **Git Bash：**
 
@@ -108,7 +120,8 @@ ant compile
 mkdir -p ide-lib
 cp build/lib/log4j-1.2.15.jar   ide-lib/
 cp build/lib/jline-0.9.94.jar   ide-lib/
-cp build/test/lib/junit-4.8.1.jar ide-lib/   # 需先 ant ivy-retrieve-test
+# 下面这行需先 ant ivy-retrieve-test，且仅编辑测试源码时才需要
+cp build/test/lib/junit-4.8.1.jar ide-lib/
 ```
 
 **CMD (Windows)：**
@@ -117,6 +130,7 @@ cp build/test/lib/junit-4.8.1.jar ide-lib/   # 需先 ant ivy-retrieve-test
 if not exist ide-lib mkdir ide-lib
 copy /y build\lib\log4j-1.2.15.jar      ide-lib\
 copy /y build\lib\jline-0.9.94.jar      ide-lib\
+rem 下面这行需先 ant ivy-retrieve-test，且仅编辑测试源码时才需要
 copy /y build\test\lib\junit-4.8.1.jar  ide-lib\
 ```
 
@@ -125,6 +139,7 @@ copy /y build\test\lib\junit-4.8.1.jar  ide-lib\
 ```powershell
 New-Item -ItemType Directory -Force ide-lib | Out-Null
 Copy-Item build\lib\log4j-1.2.15.jar,build\lib\jline-0.9.94.jar ide-lib\
+# 下面这行需先 ant ivy-retrieve-test，且仅编辑测试源码时才需要
 Copy-Item build\test\lib\junit-4.8.1.jar ide-lib\
 ```
 
@@ -354,6 +369,7 @@ Remove-Item -Force src\java\lib\ivy-*.jar -ErrorAction SilentlyContinue
 | IDE 里 `data.*` / `proto.*` 一片红 | jute 生成源码未生成或未标源码根 | 先 `ant compile`，再把 `src/java/generated` 标 Sources |
 | 客户端报 `Path must start with / character` | Git Bash 把 `/hello` 转成了 Windows 路径 | `export MSYS_NO_PATHCONV=1` |
 | `javac: command not found` | PATH 上是 JRE 垫片 | Ant 用 `JAVA_HOME` 编译，确保它指向 JDK 即可 |
+| 复制 junit 报「系统找不到指定的文件」 | `ant compile` 不拉测试依赖，`build/test/lib/` 不存在 | 先 `ant ivy-retrieve-test`；或跳过 junit（只编辑主源码不需要它） |
 
 ---
 
