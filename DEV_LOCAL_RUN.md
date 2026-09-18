@@ -1,6 +1,6 @@
 # ZooKeeper 3.5.5 本地开发运行手册
 
-> 分支 `dev-3.5.5`，Windows + JDK 1.8。以下四套配置均已在本机实测通过。
+> 分支 `dev-3.5.5`，Windows + JDK 1.8。以下提供四种本地跑法。
 
 ## 环境前提
 
@@ -77,7 +77,7 @@ java -cp "%CP%" org.apache.zookeeper.ZooKeeperMain -server 127.0.0.1:2181 get /h
 java -cp "%CP%" org.apache.zookeeper.ZooKeeperMain -server 127.0.0.1:2181 ls /
 ```
 
-实测：`Created /hello` → `get` 返回 `world` → `ls /` 得 `[hello, zookeeper]`。
+预期输出：`Created /hello` → `get` 返回 `world` → `ls /` 得 `[hello, zookeeper]`。
 
 > 也可用 Maven exec 免手拼 classpath：
 >
@@ -106,13 +106,13 @@ mvn -pl zookeeper-assembly -am -DskipTests -Dcheckstyle.skip=true -Drat.skip=tru
 ## (4) bin 目录脚本启动（Windows .cmd）
 
 **关键**：`bin\zkEnv.cmd` 原生 classpath 只认 `build\classes` + `build\lib\*`（或发行包 `..\*;..\lib\*`），**不认 Maven
-的 `target`**。已在脚本第 33-34 行补了一行指向 Maven 模块布局：
+的 `target`**。已在脚本中补了一行指向 Maven 模块布局：
 
 ```bat
 SET CLASSPATH=%~dp0..\zookeeper-server\target\classes;%~dp0..\zookeeper-server\target\lib\*;%CLASSPATH%
 ```
 
-这样 `mvn install` 之后直接跑脚本即可，**无需再把 target 拷进 build\**。改完代码只需重新 `mvn install`。
+这样 `mvn install` 之后直接跑脚本即可。改完代码只需重新 `mvn install`。
 
 启动：
 
