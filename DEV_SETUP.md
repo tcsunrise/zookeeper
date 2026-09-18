@@ -306,9 +306,33 @@ Stop-Process -Id $p -Force
 
 直接点 ▶ 启动，点红色 ■ 停止，无需 `taskkill`。
 
-> ⚠️ **交互式客户端必须开终端仿真**，否则连上后敲 `ls /` 回车「像卡住」不执行——因为 ZooKeeper CLI 用的 jline 需要真实终端(TTY)，而 IDEA 普通运行控制台不是 TTY。
-> `ZK Client.run.xml` 已内置 `<option name="RUN_AS_TERMINAL" value="true" />`（即「Emulate terminal in output console」）。若你的 IDEA 版本没自动生效，手动勾选：`Edit Configurations → ZK Client → Modify options → Emulate terminal in output console`。
-> 或者干脆不进交互模式，把命令写进参数一次性执行，如 `-server 127.0.0.1:2181 ls /`。
+#### ⚠️ 交互式客户端在 IDEA Run 控制台「像卡住」
+
+连上后敲 `ls /` 回车没反应，不是卡住：ZooKeeper CLI 用 jline 做命令行编辑，jline 需要真实终端(TTY)，而 IDEA 普通 Run 控制台不是 TTY。
+
+源码逻辑：`ZooKeeperMain.run()` 检测到 classpath 有 jline 就用它，**否则自动退回普通 `BufferedReader.readLine()`**（后者在 IDEA 控制台里能正常交互）。据此有三种解法：
+
+**方案 A（推荐，体验最好）——用 IDEA 的 Terminal 跑，不用 Run 配置**
+
+IDEA 底部 **Terminal** 标签是真实 TTY，jline 完整可用（历史、补全）：
+
+```
+java -cp "build\classes;build\lib\log4j-1.2.15.jar;build\lib\jline-0.9.94.jar;conf" org.apache.zookeeper.ZooKeeperMain -server 127.0.0.1:2181
+```
+
+**方案 B——仍用 Run 控制台，排除 jline**
+
+`ZK Client → Modify options → Modify classpath`，把 `jline-0.9.94.jar` 加入 **Exclude**。再运行会打印 `JLine support is disabled`，`ls /` 回车即正常执行（无行编辑/历史）。
+
+**方案 C——不进交互，命令写进参数**
+
+`ZK Client → Program arguments` 带上命令，一次一条，跑完即退：
+
+```
+-server 127.0.0.1:2181 ls /
+```
+
+> 注：新版 IDEA 的 Java Application 配置支持勾选「Emulate terminal in output console」（对应 `.run.xml` 的 `RUN_AS_TERMINAL=true`，本仓库 `ZK Client.run.xml` 已内置），勾上后 Run 控制台也变 TTY、jline 可直接用。但**部分旧版本的 Java 配置没有该选项**（`Modify options` 里找不到），这种情况就用上面 A/B/C。
 
 两点前提：
 
