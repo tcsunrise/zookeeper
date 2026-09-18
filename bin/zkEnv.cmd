@@ -30,6 +30,9 @@ SET CLASSPATH=%~dp0..\*;%~dp0..\lib\*;%CLASSPATH%
 REM make it work for developers
 SET CLASSPATH=%~dp0..\build\classes;%~dp0..\build\lib\*;%CLASSPATH%
 
+REM make it work with the Maven (3.5.5) module layout for developers
+SET CLASSPATH=%~dp0..\zookeeper-server\target\classes;%~dp0..\zookeeper-server\target\lib\*;%CLASSPATH%
+
 set ZOOCFG=%ZOOCFGDIR%\zoo.cfg
 
 @REM setup java environment variables
