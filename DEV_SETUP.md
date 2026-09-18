@@ -282,6 +282,22 @@ $p = (Get-NetTCPConnection -LocalPort 2181 -State Listen).OwningProcess | Select
 Stop-Process -Id $p -Force
 ```
 
+### 5.5 从 IDEA 启动（无需命令行）
+
+项目根的 **`.run/`** 目录已内置两个可共享的运行配置，IDEA 打开项目会自动加载，右上角运行下拉框即可看到：
+
+- **`ZK Standalone`** —— 启动单机 server（`QuorumPeerMain conf/zoo.cfg`）
+- **`ZK Client`** —— 启动客户端（`ZooKeeperMain -server 127.0.0.1:2181`，不带命令进交互模式）
+
+直接点 ▶ 启动，点红色 ■ 停止，无需 `taskkill`。
+
+两点前提：
+
+1. **模块名**：`.run/*.run.xml` 里写的是 `<module name="zookeeper" />`，需与你的 IDEA 模块名一致；不同则改这一行。
+2. **log4j 日志**：把 `conf/` 目录在 `Project Structure → Modules` 里标记为 **Resources**，`log4j.properties` 才会进 classpath；否则能跑但只有 `No appenders` 警告、无 INFO 日志。（此为模块级设置，存于 `.idea/*.iml`，不随 `.run/` 提交。）
+
+> 若想手动新建运行配置：`Run → Edit Configurations → + → Application`，Main class 填上述主类，Program arguments 填对应参数，Working directory 设为项目根（`$ProjectFileDir$`）。
+
 ---
 
 ## 6. 清理与从头重来
