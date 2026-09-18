@@ -306,6 +306,10 @@ Stop-Process -Id $p -Force
 
 直接点 ▶ 启动，点红色 ■ 停止，无需 `taskkill`。
 
+> ⚠️ **交互式客户端必须开终端仿真**，否则连上后敲 `ls /` 回车「像卡住」不执行——因为 ZooKeeper CLI 用的 jline 需要真实终端(TTY)，而 IDEA 普通运行控制台不是 TTY。
+> `ZK Client.run.xml` 已内置 `<option name="RUN_AS_TERMINAL" value="true" />`（即「Emulate terminal in output console」）。若你的 IDEA 版本没自动生效，手动勾选：`Edit Configurations → ZK Client → Modify options → Emulate terminal in output console`。
+> 或者干脆不进交互模式，把命令写进参数一次性执行，如 `-server 127.0.0.1:2181 ls /`。
+
 两点前提：
 
 1. **模块名**：`.run/*.run.xml` 里写的是 `<module name="zookeeper" />`，需与你的 IDEA 模块名一致；不同则改这一行。

@@ -4,6 +4,7 @@
     <module name="zookeeper" />
     <option name="PROGRAM_PARAMETERS" value="-server 127.0.0.1:2181" />
     <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="RUN_AS_TERMINAL" value="true" />
     <method v="2">
       <option name="Make" enabled="true" />
     </method>
