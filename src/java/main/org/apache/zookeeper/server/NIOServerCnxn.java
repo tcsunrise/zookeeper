@@ -142,6 +142,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
             ss.socket().setReuseAddress(true);
             LOG.info("binding to port " + addr);
             ss.socket().bind(addr);
+            // https://medium.com/@kaustubh.saha/java-nio-2d64e57f8d3f
             ss.configureBlocking(false);
             ss.register(selector, SelectionKey.OP_ACCEPT);
         }
@@ -239,6 +240,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                     Collections.shuffle(selectedList);
                     for (SelectionKey k : selectedList) {
                         if ((k.readyOps() & SelectionKey.OP_ACCEPT) != 0) {
+                            // 客户端的 channel
                             SocketChannel sc = ((ServerSocketChannel) k
                                     .channel()).accept();
                             InetAddress ia = sc.socket().getInetAddress();
@@ -250,10 +252,14 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                             } else {
                                 LOG.info("Accepted socket connection from "
                                         + sc.socket().getRemoteSocketAddress());
+                                // 将客户端 channel 配置为 非阻塞
                                 sc.configureBlocking(false);
+                                // 将读事件注册到 selector
                                 SelectionKey sk = sc.register(selector,
                                         SelectionKey.OP_READ);
+                                // 创建服务端 cnxn
                                 NIOServerCnxn cnxn = createConnection(sc, sk);
+                                // 附件到 sk
                                 sk.attach(cnxn);
                                 addCnxn(cnxn);
                             }
@@ -466,9 +472,11 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         }
     }
 
-    /** Read the request payload (everything followng the length prefix) */
+    /** Read the request payload (everything following the length prefix) */
     private void readPayload() throws IOException, InterruptedException {
+        // 正在接收数据中
         if (incomingBuffer.remaining() != 0) { // have we read length bytes?
+            // 这里如何理解, 为什么又读了一遍? 贪心策略
             int rc = sock.read(incomingBuffer); // sock is non-blocking, so ok
             if (rc < 0) {
                 throw new EndOfStreamException(
@@ -482,8 +490,10 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
             packetReceived();
             incomingBuffer.flip();
             if (!initialized) {
+                // 建立会话、协商参数
                 readConnectRequest();
             } else {
+                // 处理业务操作
                 readRequest();
             }
             lenBuffer.clear();
@@ -507,8 +517,10 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                             + Long.toHexString(sessionId)
                             + ", likely client has closed socket");
                 }
+                // 这段不为0呢，当前连接的状态是什么样:正在接收数据中
                 if (incomingBuffer.remaining() == 0) {
                     boolean isPayload;
+                    // 这里是2个对象的比较 是不是一个对象，标识一个请求的开始
                     if (incomingBuffer == lenBuffer) { // start of next request
                         incomingBuffer.flip();
                         isPayload = readLength(k);
