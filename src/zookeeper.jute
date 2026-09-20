@@ -26,18 +26,19 @@ module org.apache.zookeeper.data {
         Id id;
     }
     // information shared with the client
+    // 与客户端共享的节点(znode)元数据，exists/getData/setData 等接口返回
     class Stat {
-        long czxid;      // created zxid
-        long mzxid;      // last modified zxid
-        long ctime;      // created
-        long mtime;      // last modified
-        int version;     // version
-        int cversion;    // child version
-        int aversion;    // acl version
-        long ephemeralOwner; // owner id if ephemeral, 0 otw
-        int dataLength;  //length of the data in the node
-        int numChildren; //number of children of this node
-        long pzxid;      // last modified children
+        long czxid;      // created zxid —— 创建该节点的事务 zxid，创建后永不改变
+        long mzxid;      // last modified zxid —— 最后一次修改本节点数据的事务 zxid
+        long ctime;      // created —— 创建时间(自 epoch 起的毫秒数)
+        long mtime;      // last modified —— 最后一次修改数据的时间(毫秒)
+        int version;     // version —— 数据版本号，每次 setData +1(乐观锁 CAS 依据)
+        int cversion;    // child version —— 子节点列表版本号，每次增删直接子节点 +1
+        int aversion;    // acl version —— ACL 权限版本号，每次 setACL +1
+        long ephemeralOwner; // owner id if ephemeral, 0 otw —— 临时节点时为拥有者 sessionId，持久节点为 0
+        int dataLength;  //length of the data in the node —— 本节点存储数据的字节长度
+        int numChildren; //number of children of this node —— 本节点的子节点个数
+        long pzxid;      // last modified children —— 最后一次修改子节点列表(增/删子节点)的事务 zxid
     }
     // information explicitly stored by the server persistently
     class StatPersisted {
