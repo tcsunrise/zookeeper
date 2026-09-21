@@ -234,31 +234,28 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                 try {
                     selector.select(1000);
                     Set<SelectionKey> selected;
+                    // 这里为什么在 this 上同步？
                     synchronized (this) {
                         selected = selector.selectedKeys();
                     }
-                    ArrayList<SelectionKey> selectedList = new ArrayList<SelectionKey>(
-                            selected);
+                    ArrayList<SelectionKey> selectedList = new ArrayList<SelectionKey>(selected);
                     Collections.shuffle(selectedList);
+
                     for (SelectionKey k : selectedList) {
                         if ((k.readyOps() & SelectionKey.OP_ACCEPT) != 0) {
-                            // 客户端的 channel
-                            SocketChannel sc = ((ServerSocketChannel) k
-                                    .channel()).accept();
+                            // 获取 server 和 client 之间的 channel
+                            SocketChannel sc = ((ServerSocketChannel) k.channel()).accept();
                             InetAddress ia = sc.socket().getInetAddress();
                             int cnxncount = getClientCnxnCount(ia);
                             if (maxClientCnxns > 0 && cnxncount >= maxClientCnxns){
-                                LOG.warn("Too many connections from " + ia
-                                         + " - max is " + maxClientCnxns );
+                                LOG.warn("Too many connections from " + ia + " - max is " + maxClientCnxns );
                                 sc.close();
                             } else {
-                                LOG.info("Accepted socket connection from "
-                                        + sc.socket().getRemoteSocketAddress());
+                                LOG.info("Accepted socket connection from " + sc.socket().getRemoteSocketAddress());
                                 // 将客户端 channel 配置为 非阻塞
                                 sc.configureBlocking(false);
                                 // 将读事件注册到 selector
-                                SelectionKey sk = sc.register(selector,
-                                        SelectionKey.OP_READ);
+                                SelectionKey sk = sc.register(selector, SelectionKey.OP_READ);
                                 // 创建服务端 cnxn
                                 NIOServerCnxn cnxn = createConnection(sc, sk);
                                 // 附件到 sk
@@ -754,8 +751,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
     }
 
     private void readConnectRequest() throws IOException, InterruptedException {
-        BinaryInputArchive bia = BinaryInputArchive
-                .getArchive(new ByteBufferInputStream(incomingBuffer));
+        BinaryInputArchive bia = BinaryInputArchive.getArchive(new ByteBufferInputStream(incomingBuffer));
         ConnectRequest connReq = new ConnectRequest();
         connReq.deserialize(bia, "connect");
         if (LOG.isDebugEnabled()) {
@@ -767,6 +763,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         if (zk == null) {
             throw new IOException("ZooKeeperServer not running");
         }
+        // 建立连接时候，如果客户端的zxid比当前的最大的还大，关闭链接
         if (connReq.getLastZxidSeen() > zk.getZKDatabase().getDataTreeLastProcessedZxid()) {
             String msg = "Refusing session request for client "
                 + sock.socket().getRemoteSocketAddress()
@@ -789,13 +786,12 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         if (sessionTimeout > maxSessionTimeout) {
             sessionTimeout = maxSessionTimeout;
         }
-        // We don't want to receive any packets until we are sure that the
+        // 为什么？We don't want to receive any packets until we are sure that the
         // session is setup
         disableRecv();
         if (connReq.getSessionId() != 0) {
             long clientSessionId = connReq.getSessionId();
-            LOG.info("Client attempting to renew session 0x"
-                    + Long.toHexString(clientSessionId)
+            LOG.info("Client attempting to renew session 0x" + Long.toHexString(clientSessionId)
                     + " at " + sock.socket().getRemoteSocketAddress());
             factory.closeSessionWithoutWakeup(clientSessionId);
             setSessionId(clientSessionId);
@@ -1592,6 +1588,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
             bos.writeInt(-1, "len");
             rsp.serialize(bos, "connect");
             baos.close();
+
             ByteBuffer bb = ByteBuffer.wrap(baos.toByteArray());
             bb.putInt(bb.remaining() - 4).rewind();
             sendBuffer(bb);
