@@ -24,7 +24,11 @@ import java.io.File;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
+import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -36,6 +40,7 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.Watcher.Event.KeeperState;
+import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.server.NIOServerCnxn;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.junit.Test;
@@ -60,6 +65,15 @@ public class ClientPortBindTest extends TestCase implements Watcher {
      * Verify that the server binds to the specified address
      */
     public void testBindByAddress() throws Exception {
+
+        // 浅拷贝
+        HashSet<String> strings = new HashSet<>();
+        strings.add(new String("OK"));
+        strings.add(new String("ss"));
+        HashSet<String> cloned = (HashSet<String>) strings.clone();
+        System.out.println(cloned);
+
+
         String bindAddress = null;
         Enumeration<NetworkInterface> intfs =
             NetworkInterface.getNetworkInterfaces();
@@ -87,29 +101,28 @@ public class ClientPortBindTest extends TestCase implements Watcher {
 
 
         File tmpDir = ClientBase.createTmpDir();
-
         ClientBase.setupTestEnv();
         ZooKeeperServer zks = new ZooKeeperServer(tmpDir, tmpDir, 3000);
-
-        NIOServerCnxn.Factory f = new NIOServerCnxn.Factory(
-                new InetSocketAddress(bindAddress, PORT));
+        NIOServerCnxn.Factory f = new NIOServerCnxn.Factory(new InetSocketAddress(bindAddress, PORT));
         f.startup(zks);
         LOG.info("starting up the the server, waiting");
 
         assertTrue("waiting for server up",
-                   ClientBase.waitForServerUp(HOSTPORT,
-                                   CONNECTION_TIMEOUT));
+                   ClientBase.waitForServerUp(HOSTPORT, CONNECTION_TIMEOUT));
 
         startSignal = new CountDownLatch(1);
         ZooKeeper zk = new ZooKeeper(HOSTPORT, CONNECTION_TIMEOUT, this);
         try {
-            startSignal.await(CONNECTION_TIMEOUT,
-                    TimeUnit.MILLISECONDS);
+            startSignal.await(CONNECTION_TIMEOUT, TimeUnit.MILLISECONDS);
+            // 已连接 ： client -> server
             assertTrue("count == 0", startSignal.getCount() == 0);
+            List<String> children = zk.getChildren("/", false, new Stat());
+            System.out.println(children);
+            // 关闭客户端
             zk.close();
         } finally {
+            // 关闭server
             f.shutdown();
-
             assertTrue("waiting for server down",
                        ClientBase.waitForServerDown(HOSTPORT,
                                                     CONNECTION_TIMEOUT));

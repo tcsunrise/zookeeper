@@ -228,6 +228,8 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         }
 
         public void run() {
+            // 1.接收新连接并新建 ServerCnxn
+            // 2.处理 ServerCnxn 上的读写
             while (!ss.socket().isClosed()) {
                 try {
                     selector.select(1000);
@@ -280,6 +282,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                     LOG.warn("Ignoring exception", e);
                 }
             }
+            // socket 关闭后清理资源
             clear();
             LOG.info("NIOServerCnxn factory exited run method");
         }
@@ -294,10 +297,13 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         @SuppressWarnings("unchecked")
         synchronized public void clear() {
             selector.wakeup();
+
             HashSet<NIOServerCnxn> cnxns;
             synchronized (this.cnxns) {
+                // 浅拷贝
                 cnxns = (HashSet<NIOServerCnxn>)this.cnxns.clone();
             }
+
             // got to clear all the connections that we have in the selector
             for (NIOServerCnxn cnxn: cnxns) {
                 try {
@@ -310,22 +316,31 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
             }
         }
 
+        // 关闭整个 NIO 服务端工厂：停止监听、断开所有连接、结束 selector 线程、关闭底层服务
         public void shutdown() {
             try {
+                // 1. 关闭 ServerSocketChannel（监听 socket），不再接受新的客户端连接
                 ss.close();
+                // 2. 遍历并关闭当前所有已建立的客户端连接（见上面的 clear() 方法）
                 clear();
+                // 3. 中断本线程（Factory 本身是一个 Thread，run() 里阻塞在 selector.select() 上）
                 this.interrupt();
+                // 4. 等待本线程真正结束（阻塞直到 run() 退出），保证 selector 线程已停
                 this.join();
             } catch (InterruptedException e) {
+                // join()/interrupt() 期间被中断——关闭阶段可忽略，仅告警
                 LOG.warn("Ignoring interrupted exception during shutdown", e);
             } catch (Exception e) {
+                // 关闭过程中的其它意外异常同样只告警，不阻断后续清理
                 LOG.warn("Ignoring unexpected exception during shutdown", e);
             }
             try {
+                // 5. 关闭 selector 本身，释放其占用的系统资源（文件描述符等）
                 selector.close();
             } catch (IOException e) {
                 LOG.warn("Selector closing", e);
             }
+            // 6. 若持有 ZooKeeperServer 实例，级联关闭它（关闭请求处理链、事务日志等）
             if (zks != null) {
                 zks.shutdown();
             }
@@ -1267,8 +1282,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
             }
         }
 
-        final PrintWriter pwriter = new PrintWriter(
-                new BufferedWriter(new SendBufferWriter()));
+        final PrintWriter pwriter = new PrintWriter(new BufferedWriter(new SendBufferWriter()));
         if (len == ruokCmd) {
             RuokCommand ruok = new RuokCommand(pwriter);
             ruok.start();
@@ -1440,6 +1454,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
      * Close resources associated with the sock of this cnxn. 
      */
     private void closeSock() {
+        // 幂等
         if (sock == null) {
             return;
         }
