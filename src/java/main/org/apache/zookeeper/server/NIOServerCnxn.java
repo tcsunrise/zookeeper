@@ -291,6 +291,8 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
          * to block any new connections from being established.
          *
          */
+        //  org.apache.zookeeper.server.NIOServerCnxn.Factory
+        // clear NIOServerCnxn
         @SuppressWarnings("unchecked")
         synchronized public void clear() {
             selector.wakeup();
@@ -313,6 +315,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
             }
         }
 
+        // //  org.apache.zookeeper.server.NIOServerCnxn.Factory
         // 关闭整个 NIO 服务端工厂：停止监听、断开所有连接、结束 selector 线程、关闭底层服务
         public void shutdown() {
             try {
@@ -551,11 +554,55 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                     }
                 }
             }
+            /*
+             * ==================== 写分支整体分析 ====================
+             *
+             * 【何时进入】selector 报告该连接可写（OP_WRITE 就绪）。OP_WRITE 只在「有待发数据」时
+             *   才会被打开：业务线程调用 sendBuffer()，如果直接 write 没写完（或当前已在排队），
+             *   就把剩余数据放入 outgoingBuffers 并打开 OP_WRITE，交给 selector 线程在这里异步发送。
+             *
+             * 【三个阶段】
+             *   1. 聚合拷贝：把队列中多个（通常是很小的）堆内 ByteBuffer 依次拷进 Factory 共享的
+             *      64KB 直接内存 directBuffer，最多拷满为止。
+             *   2. 一次写出：sock.write(directBuffer) 一次系统调用发出尽可能多的数据；
+             *      非阻塞 socket 可能只写出一部分（内核发送缓冲区满），返回实际写出的字节数 sent。
+             *   3. 按字节数出队：用 sent 从队头往后「核销」：整块发完的出队并计数，发了一半的
+             *      推进 position 后停止；遇到 closeConn 标记说明前面的数据都已发完，抛异常关闭连接。
+             *
+             * 【为什么要拷到 directBuffer】
+             *   - 用堆内 buffer 直接 write，JDK 内部也会临时拷贝到一块直接内存再发送；这里自己维护
+             *     一块复用的直接内存，省去每次临时分配。
+             *   - 把多个小响应合并成一次 write，减少系统调用次数（效果类似 gathering write）。
+             *   - directBuffer 属于 Factory，所有连接共用；这样做是安全的，因为 doIO 只在唯一的
+             *     selector 线程里执行，同一时刻只有一个连接在使用它。
+             *
+             * 【为什么源 buffer 的 position 要先保存再还原】
+             *   拷贝时不能动源 buffer 的 position：此时还不知道 socket 实际能写出多少字节，
+             *   只有写完之后才按 sent 推进 position，这样没写出去的部分下次还能重新拷贝发送。
+             *
+             * 【最后的 synchronized(factory) 块：维护 OP_WRITE】
+             *   - 队列空了：关掉 OP_WRITE，否则 socket 一直可写，selector 会不停空转（CPU 100%）。
+             *   - 队列非空：保持 OP_WRITE，等 socket 再次可写时继续发送。
+             *   - 必须加锁，并且和 sendBuffer() 用同一把锁（factory）：sendBuffer() 在锁内做
+             *     「入队 + 打开 OP_WRITE」，这里在锁内做「判断队列空 + 关闭 OP_WRITE」。
+             *     如果不加锁，可能出现：这里判断队列为空 → 业务线程入队并打开 OP_WRITE → 这里再
+             *     关闭 OP_WRITE。结果新数据留在队列里，却再也没有写事件来触发发送，响应卡死。
+             *
+             * 【几处要注意的点】
+             *   - 队列元素可能被拆分：一个响应可能要分多次 doIO 才能发完（部分写），
+             *     position 就是它的「已发送进度」。
+             *   - closeConn 是长度为 0 的哨兵 buffer（sendCloseSession() 放入），用「==」比较引用，
+             *     作用是「前面的数据都发完之后再关闭连接」，保证关闭前的最后一个响应能送到客户端。
+             *   - "responded to info probe" 分支是早期四字命令（ruok 等）的收尾逻辑：未初始化
+             *     并且读已关闭，说明只是一次探测，回完就关闭。3.3.6 中四字命令会 cancel 掉
+             *     SelectionKey，改用 sendBufferSync 同步发送，已不会走到这里，基本属于历史遗留代码。
+             */
             if (k.isWritable()) {
                 // ZooLog.logTraceMessage(LOG,
                 // ZooLog.CLIENT_DATA_PACKET_TRACE_MASK
                 // "outgoingBuffers.size() = " +
                 // outgoingBuffers.size());
+                // 有待发送的数据才进入发送流程；队列为空时直接跳到下面，去关闭 OP_WRITE
                 if (outgoingBuffers.size() > 0) {
                     // ZooLog.logTraceMessage(LOG,
                     // ZooLog.CLIENT_DATA_PACKET_TRACE_MASK,
@@ -568,16 +615,25 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                      * with data from the non-direct buffers that we need to
                      * send.
                      */
+                    // 取 Factory 共享的 64KB 直接内存（所有连接共用，只在 selector 线程中使用）
                     ByteBuffer directBuffer = factory.directBuffer;
+                    // clear()：position=0，limit=capacity，变成「整块可写入」的状态，准备接收拷贝
                     directBuffer.clear();
 
+                    // 按先进先出的顺序遍历待发队列（只读遍历，不出队），把数据拷进 directBuffer
                     for (ByteBuffer b : outgoingBuffers) {
+                        // 当前 buffer 的剩余数据比 directBuffer 的剩余空间大，一次放不下
                         if (directBuffer.remaining() < b.remaining()) {
                             /*
                              * When we call put later, if the directBuffer is to
                              * small to hold everything, nothing will be copied,
                              * so we've got to slice the buffer if it's too big.
                              */
+                            // put(src) 要求目标装得下 src 的全部剩余数据，否则抛
+                            // BufferOverflowException，一个字节都不拷。
+                            // 所以用 slice() 得到一个共享底层数据的新视图（从 b 当前 position 开始），
+                            // 再把它的 limit 截到 directBuffer 的剩余空间，只拷前面能放下的部分。
+                            // 强转是因为 Java 8 中 Buffer.limit(int) 返回的是 Buffer 而不是 ByteBuffer。
                             b = (ByteBuffer) b.slice().limit(
                                     directBuffer.remaining());
                         }
@@ -588,9 +644,15 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                          * needed), so we save and reset the position after the
                          * copy
                          */
+                        // 记住源 buffer 拷贝前的 position
                         int p = b.position();
+                        // 拷贝：directBuffer 和 b 的 position 都会前移本次拷贝的字节数
                         directBuffer.put(b);
+                        // 把源 buffer 的 position 还原：还不知道 socket 实际能写出多少，
+                        // 写完后再按实际写出的字节数推进。
+                        // （如果 b 是上面 slice 出来的视图，还原的是视图，原队列元素本来就没动）
                         b.position(p);
+                        // directBuffer 已拷满，后面的 buffer 等下一次可写事件再发
                         if (directBuffer.remaining() == 0) {
                             break;
                         }
@@ -599,29 +661,46 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                      * Do the flip: limit becomes position, position gets set to
                      * 0. This sets us up for the write.
                      */
+                    // flip()：limit=已拷入的数据量，position=0，切换成「可读出」状态，准备 write
                     directBuffer.flip();
 
+                    // 非阻塞写：返回实际写出的字节数，可能小于 directBuffer 中的数据量，甚至为 0
+                    // （内核发送缓冲区满了）
                     int sent = sock.write(directBuffer);
+                    // 用来指向队头 buffer 的临时变量
                     ByteBuffer bb;
 
                     // Remove the buffers that we have sent
+                    // 按实际写出的字节数 sent，从队头开始「核销」已发送的 buffer
                     while (outgoingBuffers.size() > 0) {
+                        // 只查看队头，不出队：它可能只发出了一部分
                         bb = outgoingBuffers.peek();
+                        // 遇到关闭哨兵：说明它前面的数据都已完整发出，现在可以关闭连接了
+                        // （用 == 比较引用，closeConn 是全局唯一的长度为 0 的 buffer）
                         if (bb == closeConn) {
+                            // 抛出后由下面的 catch (CloseRequestException) 调用 close()
                             throw new CloseRequestException("close requested");
                         }
+                        // 队头 buffer 未发送的字节数，减去本次还没核销完的已发送字节数
+                        // （拷贝时 position 已还原，所以 bb.remaining() 仍是发送前的剩余量）
                         int left = bb.remaining() - sent;
+                        // left > 0：这个 buffer 只发出了一部分
                         if (left > 0) {
                             /*
                              * We only partially sent this buffer, so we update
                              * the position and exit the loop.
                              */
+                            // 把 position 推进 sent 个字节，记录发送进度；下次从未发送的位置继续
                             bb.position(bb.position() + sent);
+                            // 本次写出的字节已全部核销完，后面的 buffer 都没发，退出
                             break;
                         }
+                        // 走到这里说明该 buffer 已完整发出：统计发送包数（连接级和服务器级）
                         packetSent();
                         /* We've sent the whole buffer, so drop the buffer */
+                        // 从 sent 中扣掉这个 buffer 的字节数，剩下的继续核销后面的 buffer
                         sent -= bb.remaining();
+                        // 出队：真正从待发队列中移除已发送完的 buffer
                         outgoingBuffers.remove();
                     }
                     // ZooLog.logTraceMessage(LOG,
@@ -629,15 +708,23 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                     // outgoingBuffers.size() = " + outgoingBuffers.size());
                 }
 
+                // 和 sendBuffer() 用同一把锁：保证「判断队列 + 修改 OP_WRITE」与
+                // 「入队 + 打开 OP_WRITE」互斥，避免丢失写事件（见上方整体分析）
                 synchronized(this.factory){
+                    // 待发数据已全部发完
                     if (outgoingBuffers.size() == 0) {
+                        // 连接还未完成会话初始化，并且读事件已关闭：说明只是一次探测
+                        // （早期四字命令的处理方式），响应已发完，关闭连接
                         if (!initialized
                                 && (sk.interestOps() & SelectionKey.OP_READ) == 0) {
                             throw new CloseRequestException("responded to info probe");
                         }
+                        // 关闭 OP_WRITE：没有数据要发了，否则 socket 一直可写，selector 会空转
                         sk.interestOps(sk.interestOps()
                                 & (~SelectionKey.OP_WRITE));
                     } else {
+                        // 还有数据没发完（部分写，或 directBuffer 装不下）：保持 OP_WRITE，
+                        // 等 socket 再次可写时由 selector 再次调用 doIO 继续发送
                         sk.interestOps(sk.interestOps()
                                 | SelectionKey.OP_WRITE);
                     }
