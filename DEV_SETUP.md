@@ -368,7 +368,7 @@ ant spotbugs
 | `spotbugs-report.html` | 可视化报告（`fancy-hist.xsl` 样式，按类别/包/类分组，可点开看说明和源码行） |
 | `spotbugs-report.xml` | 原始数据（含问题描述，便于脚本统计或导入 IDE 插件） |
 
-> 日志里的 `[spotbugs] Java Result: 1` **不是报错**：这是 SpotBugs 的退出码，1 表示「发现了问题」。构建是否成功看 `BUILD SUCCESSFUL`。
+> 发现问题不会让构建失败，只出报告；构建是否成功看 `BUILD SUCCESSFUL`。
 
 ### 6.3 常用参数
 
@@ -435,10 +435,32 @@ Invoke-Item build\spotbugs\spotbugs-report.html
 
 > 参考基线（`dev-3.3.6` 分支，`low` 级别）：共 **269** 个问题，其中高优先级 47、中 136、低 86。数量明显变化时说明代码改动引入或消除了问题。
 
-### 6.5 实现要点（改 `build.xml` 时参考）
+### 6.5 只检查并发问题
+
+```bash
+ant spotbugs-mt
+```
+
+只报告 **多线程正确性（`MT_CORRECTNESS`）** 类问题：不一致的同步、volatile 字段的非原子自增、对并发容器加 `synchronized`、并发容器上的非原子「先查后改」等。报告单独输出到 **`build/spotbugs-mt/`**，不会覆盖 `build/spotbugs/` 下的完整报告。三种 shell 命令相同，打开报告的方式同 6.4，把路径换成 `build/spotbugs-mt/spotbugs-report.html` 即可。
+
+- 过滤规则在 `src/java/test/config/findbugsIncludeConcurrencyFile.xml`，按 `<Bug category="..."/>` 或 `<Bug pattern="..."/>` 增删即可（语法同排除文件）。
+- 不想新开输出目录时，也可以给 `ant spotbugs` 直接传任意 include 过滤器（PowerShell 记得给 `-D` 参数加引号）：
+
+  ```bash
+  ant spotbugs -Dspotbugs.include.file=src/java/test/config/findbugsIncludeConcurrencyFile.xml
+  ```
+
+- 不想重新分析时：在完整报告里点 **Browse By Categories → Multithreaded correctness**，看到的是同一批问题。
+
+> 参考基线（`dev-3.3.6`）：共 **16** 个并发问题，其中高优先级 3 个，全是 `VO_VOLATILE_INCREMENT`（`FastLeaderElection:659`、`AuthFastLeaderElection:765/839`）。
+
+### 6.6 实现要点（改 `build.xml` 时参考）
 
 - 分析对象是 `build/classes`（依赖 `compile`，不需要打 jar）；`build/lib/*.jar` 作为辅助 classpath，`src/java/main` 和 `src/java/generated` 作为源码路径，报告能定位到源码行。
-- `fancy-hist.xsl` 是 **XSLT 2.0**，JDK 自带的 Xalan 只支持 1.0，会报一堆「语法错误」。因此 `<xslt>` 显式用 SpotBugs 自带的 **Saxon-HE**（`net.sf.saxon.TransformerFactoryImpl`）。
+- **用 `<java>` 直接调 SpotBugs 命令行，而不是它自带的 `<spotbugs>` Ant task**。Ant task 会把输出拆成 `-xml:withMessages` + 单独的 `-outputFile`，这种组合下 withMessages 失效，XML 里缺 `BugPattern` 定义和 `instanceHash`，HTML 报告能看到包、**点类名却展不开**。命令行写成 `-xml:withMessages=文件` 就是完整的。
+- **HTML 由 Ant `<xslt>` 从 XML 文件转换生成，不用命令行的 `-html:` 选项**。`-html:` 转换时拿不到 `FindBugsSummary`（包/类统计），报告「Browse by Packages」会显示 **Total number of bugs: 0**。
+- `fancy-hist.xsl` 是 **XSLT 2.0**，JDK 自带的 Xalan 只支持 1.0，会报一堆「语法错误」，所以 `<xslt>` 用 SpotBugs 自带的 **Saxon-HE**（`<factory name="net.sf.saxon.TransformerFactoryImpl">`）。
+- 自检方法：HTML 里 `var packageStats`、`var patterns` 两个数组都不应为空。
 - 目前发现问题**不会让构建失败**，只出报告。
 
 ---
@@ -512,10 +534,12 @@ Remove-Item -Recurse -Force "$HOME\.spotbugs"
 | 客户端报 `Path must start with / character` | Git Bash 把 `/hello` 转成了 Windows 路径 | `export MSYS_NO_PATHCONV=1` |
 | `javac: command not found` | PATH 上是 JRE 垫片 | Ant 用 `JAVA_HOME` 编译，确保它指向 JDK 即可 |
 | 复制 junit 报「系统找不到指定的文件」 | `ant compile` 不拉测试依赖，`build/test/lib/` 不存在 | 先 `ant ivy-retrieve-test`；或跳过 junit（只编辑主源码不需要它） |
+| CMD 下编译刷屏「编码GBK的不可映射字符」，中文注释显示为乱码 | 源码是 UTF-8，中文 Windows 上 javac 默认按 GBK 读 | `build.xml` 的 `<javac>` 已统一加 `encoding="UTF-8"`；新增 `<javac>` 时记得带上 |
 | PowerShell 下 `ant spotbugs -D...` 报 `Target "xxx" does not exist` | PowerShell 在 `-D` 参数的点号处拆分了参数 | 给 `-D` 参数加引号：`"-Dspotbugs.report.level=high"` |
 | `ant spotbugs` 卡在 `[get]` 或报下载失败 | 访问不了 Maven Central | 用 `-Dspotbugs.download.url=` 指向阿里云镜像（见 6.3） |
-| 日志出现 `[spotbugs] Java Result: 1` | SpotBugs 退出码 1 = 发现了问题 | 不是错误，看是否 `BUILD SUCCESSFUL` |
-| 生成 HTML 时报一堆「语法错误」 | `fancy-hist.xsl` 是 XSLT 2.0，JDK 自带 Xalan 不支持 | `build.xml` 已改用 Saxon；自行改 target 时别删 `<factory>` |
+| HTML 报告点类名展不开 | XML 不是完整的 withMessages 格式，缺 `BugPattern` / `instanceHash`（用 `<spotbugs>` Ant task 时会这样） | 用当前 `build.xml` 重新 `ant spotbugs`（已改为调命令行，见 6.6） |
+| HTML 报告「Browse by Packages」显示 `Total number of bugs: 0` | 用了 SpotBugs 命令行的 `-html:` 选项，转换时缺包/类统计 | 用当前 `build.xml`（XML 生成后再用 `<xslt>` 转换，见 6.6） |
+| 生成 HTML 时报一堆「语法错误」 | 用 JDK 自带 Xalan 跑 XSLT 2.0 的 `fancy-hist.xsl` | `<xslt>` 里保留 Saxon 的 `<factory>`，别删 |
 
 ---
 

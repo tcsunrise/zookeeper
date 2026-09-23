@@ -1,0 +1,8 @@
+<FindBugsFilter>
+  <!-- Used by 'ant spotbugs-mt': report only multithreaded correctness bugs
+       (inconsistent synchronization, non-atomic volatile updates, lock misuse,
+       unsafe lazy init, wait/notify issues, ...) -->
+  <Match>
+    <Bug category="MT_CORRECTNESS" />
+  </Match>
+</FindBugsFilter>

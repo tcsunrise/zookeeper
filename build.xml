@@ -17,7 +17,7 @@
    limitations under the License.
 -->
 
-<project name="ZooKeeper" default="jar" xmlns:ivy="antlib:org.apache.ivy.ant">
+<project name="ZooKeeper" default="jar" xmlns:ivy="antlib:org.apache.ivy.ant" xmlns:if="ant:if">
 
     <property name="Name" value="ZooKeeper" />
     <property name="name" value="zookeeper" />
@@ -213,7 +213,7 @@
     </target>
     
     <target name="jute" depends="init">
-        <javac srcdir="${java.src.dir}" destdir="${build.classes}" target="${javac.target}"
+        <javac encoding="UTF-8" srcdir="${java.src.dir}" destdir="${build.classes}" target="${javac.target}"
             includes="org/apache/jute/**" debug="on" />
     </target>
 
@@ -248,7 +248,7 @@
     </target>
 
     <target name="ver-gen" depends="init">
-        <javac srcdir="${java.src.dir}" destdir="${build.classes}" target="${javac.target}"
+        <javac encoding="UTF-8" srcdir="${java.src.dir}" destdir="${build.classes}" target="${javac.target}"
             includes="org/apache/zookeeper/version/util/**" debug="on" />
     </target>
     
@@ -281,7 +281,7 @@
     </target>
     
     <target name="build-generated" depends="compile_jute,version-info" >
-        <javac srcdir="${src_generated.dir}" destdir="${build.classes}" 
+        <javac encoding="UTF-8" srcdir="${src_generated.dir}" destdir="${build.classes}" 
             target="${javac.target}" debug="on" />
     </target>
     
@@ -326,7 +326,7 @@
     </target>
 
     <target name="compile" depends="ivy-retrieve,clover,build-generated">
-        <javac srcdir="${java.src.dir}" destdir="${build.classes}" 
+        <javac encoding="UTF-8" srcdir="${java.src.dir}" destdir="${build.classes}" 
                target="${javac.target}" debug="on">
             <classpath refid="java.classpath"/>
             <compilerarg value="-Xlint:all"/>
@@ -336,11 +336,11 @@
 
     <target name="compile-test" depends="ivy-retrieve-test,compile">
       <mkdir dir="${test.java.classes}"/>
-      <javac srcdir="${test.src.dir}" destdir="${test.java.classes}"
+      <javac encoding="UTF-8" srcdir="${test.src.dir}" destdir="${test.java.classes}"
              target="${javac.target}" debug="on">
         <classpath refid="test.java.classpath"/>
       </javac>
-      <javac srcdir="${systest.src.dir}" destdir="${test.java.classes}"
+      <javac encoding="UTF-8" srcdir="${systest.src.dir}" destdir="${test.java.classes}"
              target="${javac.target}" debug="on">
         <classpath refid="test.java.classpath"/>
       </javac>
@@ -1045,28 +1045,49 @@
 
     <target name="spotbugs" depends="spotbugs-download, compile"
             description="Run SpotBugs static analysis, reports in build/spotbugs">
-        <taskdef resource="edu/umd/cs/findbugs/anttask/tasks.properties"
-                 classpath="${spotbugs.home}/lib/spotbugs-ant.jar" />
         <mkdir dir="${spotbugs.out.dir}" />
-        <spotbugs home="${spotbugs.home}" output="xml:withMessages" outputFile="${spotbugs.report.xmlfile}"
-                  excludeFilter="${spotbugs.exclude.file}" effort="max" reportLevel="${spotbugs.report.level}"
-                  jvmargs="-Xmx1g">
-            <auxClasspath>
-                <fileset dir="${ivy.lib}" includes="*.jar" />
-            </auxClasspath>
-            <sourcePath path="${java.src.dir}" />
-            <sourcePath path="${src_generated.dir}" />
-            <class location="${build.classes}" />
-        </spotbugs>
-        <!-- fancy-hist.xsl is XSLT 2.0, so use the Saxon bundled with SpotBugs instead of the JDK's Xalan -->
+        <pathconvert property="spotbugs.auxclasspath">
+            <fileset dir="${ivy.lib}" includes="*.jar" />
+        </pathconvert>
+        <!-- Call the SpotBugs CLI instead of its Ant task: the task passes a separate -outputFile,
+             which drops the withMessages option, so the XML lacks the BugPattern/instanceHash data
+             that fancy-hist.xsl needs and the HTML report cannot be expanded below package level. -->
+        <java jar="${spotbugs.home}/lib/spotbugs.jar" fork="true" failonerror="true" maxmemory="1g">
+            <arg value="-textui" />
+            <arg value="-effort:max" />
+            <arg value="-${spotbugs.report.level}" />
+            <arg value="-exclude" />
+            <arg file="${spotbugs.exclude.file}" />
+            <arg value="-include" if:set="spotbugs.include.file" />
+            <arg file="${spotbugs.include.file}" if:set="spotbugs.include.file" />
+            <arg value="-auxclasspath" />
+            <arg value="${spotbugs.auxclasspath}" />
+            <arg value="-sourcepath" />
+            <arg path="${java.src.dir}:${src_generated.dir}" />
+            <arg value="-xml:withMessages=${spotbugs.report.xmlfile}" />
+            <arg file="${build.classes}" />
+        </java>
+        <!-- Render HTML from the XML file rather than with the CLI's -html option: that option
+             transforms a copy without FindBugsSummary, so "Browse by Packages" shows 0 bugs.
+             fancy-hist.xsl is XSLT 2.0, so use the Saxon bundled with SpotBugs, not the JDK's Xalan. -->
         <xslt style="${spotbugs.home}/src/xsl/fancy-hist.xsl" in="${spotbugs.report.xmlfile}"
-              out="${spotbugs.report.htmlfile}">
+              out="${spotbugs.report.htmlfile}" force="true">
             <factory name="net.sf.saxon.TransformerFactoryImpl" />
             <classpath>
                 <fileset dir="${spotbugs.home}/lib" includes="*.jar" />
             </classpath>
         </xslt>
         <echo message="SpotBugs report: ${spotbugs.report.htmlfile}" />
+    </target>
+
+    <!-- Concurrency bugs only (MT_CORRECTNESS), reported separately so the full report is kept.
+         inheritall="false" lets the report paths be re-derived from the new output dir. -->
+    <target name="spotbugs-mt"
+            description="Run SpotBugs for multithreaded correctness bugs only, reports in build/spotbugs-mt">
+        <antcall target="spotbugs" inheritall="false">
+            <param name="spotbugs.include.file" value="${config.dir}/findbugsIncludeConcurrencyFile.xml" />
+            <param name="spotbugs.out.dir" value="${build.dir}/spotbugs-mt" />
+        </antcall>
     </target>
 
     <!-- Code coverage -->
