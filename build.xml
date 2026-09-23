@@ -1017,6 +1017,58 @@
         <available property="findbugs.present" file="${findbugs.home}/lib/findbugs.jar" />
     </target>
 
+    <!-- Run with 'ant spotbugs'; SpotBugs is downloaded on first use.
+         Override with -Dspotbugs.home=<SpotBugs installation> to use a local copy.
+         4.8.x is the last SpotBugs line that runs on Java 8. -->
+    <property name="spotbugs.version" value="4.8.6" />
+    <property name="spotbugs.cache.dir" value="${user.home}/.spotbugs" />
+    <property name="spotbugs.home" value="${spotbugs.cache.dir}/spotbugs-${spotbugs.version}" />
+    <property name="spotbugs.download.url"
+              value="https://repo.maven.apache.org/maven2/com/github/spotbugs/spotbugs/${spotbugs.version}/spotbugs-${spotbugs.version}.tgz" />
+    <property name="spotbugs.out.dir" value="${build.dir}/spotbugs" />
+    <property name="spotbugs.exclude.file" value="${config.dir}/findbugsExcludeFile.xml" />
+    <property name="spotbugs.report.level" value="low" />
+    <property name="spotbugs.report.xmlfile" value="${spotbugs.out.dir}/spotbugs-report.xml" />
+    <property name="spotbugs.report.htmlfile" value="${spotbugs.out.dir}/spotbugs-report.html" />
+
+    <target name="check-for-spotbugs">
+        <available property="spotbugs.present" file="${spotbugs.home}/lib/spotbugs.jar" />
+    </target>
+
+    <target name="spotbugs-download" depends="check-for-spotbugs" unless="spotbugs.present">
+        <mkdir dir="${spotbugs.cache.dir}" />
+        <get src="${spotbugs.download.url}" dest="${spotbugs.cache.dir}/spotbugs-${spotbugs.version}.tgz"
+             usetimestamp="true" />
+        <untar src="${spotbugs.cache.dir}/spotbugs-${spotbugs.version}.tgz" dest="${spotbugs.cache.dir}"
+               compression="gzip" />
+    </target>
+
+    <target name="spotbugs" depends="spotbugs-download, compile"
+            description="Run SpotBugs static analysis, reports in build/spotbugs">
+        <taskdef resource="edu/umd/cs/findbugs/anttask/tasks.properties"
+                 classpath="${spotbugs.home}/lib/spotbugs-ant.jar" />
+        <mkdir dir="${spotbugs.out.dir}" />
+        <spotbugs home="${spotbugs.home}" output="xml:withMessages" outputFile="${spotbugs.report.xmlfile}"
+                  excludeFilter="${spotbugs.exclude.file}" effort="max" reportLevel="${spotbugs.report.level}"
+                  jvmargs="-Xmx1g">
+            <auxClasspath>
+                <fileset dir="${ivy.lib}" includes="*.jar" />
+            </auxClasspath>
+            <sourcePath path="${java.src.dir}" />
+            <sourcePath path="${src_generated.dir}" />
+            <class location="${build.classes}" />
+        </spotbugs>
+        <!-- fancy-hist.xsl is XSLT 2.0, so use the Saxon bundled with SpotBugs instead of the JDK's Xalan -->
+        <xslt style="${spotbugs.home}/src/xsl/fancy-hist.xsl" in="${spotbugs.report.xmlfile}"
+              out="${spotbugs.report.htmlfile}">
+            <factory name="net.sf.saxon.TransformerFactoryImpl" />
+            <classpath>
+                <fileset dir="${spotbugs.home}/lib" includes="*.jar" />
+            </classpath>
+        </xslt>
+        <echo message="SpotBugs report: ${spotbugs.report.htmlfile}" />
+    </target>
+
     <!-- Code coverage -->
     <target name="cobertura-instrument" depends="compile-test">
       <taskdef resource="tasks.properties">

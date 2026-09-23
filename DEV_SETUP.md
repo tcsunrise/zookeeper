@@ -1,6 +1,6 @@
 # ZooKeeper 3.3.6 本地开发环境搭建指南
 
-本文记录从零开始把这份 ZooKeeper 3.3.6 源码在本地跑通的完整流程：修复失效的依赖地址 → Ant 编译 → IDE 导入 → 单机启动验证。
+本文记录从零开始把这份 ZooKeeper 3.3.6 源码在本地跑通的完整流程：修复失效的依赖地址 → Ant 编译 → IDE 导入 → 单机启动验证 → SpotBugs 静态检查。
 
 > 环境背景：Windows 11 + JDK 8 + Apache Ant 1.10。这是一份 **Ant + Ivy** 老式工程，没有 Maven/Gradle 配置。
 >
@@ -343,21 +343,121 @@ java -cp "build\classes;build\lib\log4j-1.2.15.jar;build\lib\jline-0.9.94.jar;co
 
 ---
 
-## 6. 清理与从头重来
+## 6. 静态代码检查（SpotBugs）
+
+`build.xml` 已集成 SpotBugs（FindBugs 的后继），一条命令完成 **编译 → 分析 → 出报告**。原有的 `findbugs` target 保留未动（需自备 FindBugs 安装，已基本不可用）。
+
+### 6.1 首次运行会自动下载
+
+- 首次执行时，`spotbugs-download` 从 Maven Central 下载 **SpotBugs 4.8.6**（约 16 MB）并解压到 **`~/.spotbugs/`**（即 `%USERPROFILE%\.spotbugs`），之后直接复用。
+- 缓存放在 `build/` 之外，所以 **`ant clean` 不会删它**，无需重复下载。
+- 为什么是 4.8.6：它是最后一个能跑在 **Java 8** 上的版本（4.9+ 要求 Java 11）。
+
+### 6.2 运行
+
+三种 shell 命令相同：
+
+```bash
+ant spotbugs
+```
+
+看到 `BUILD SUCCESSFUL` 和 `SpotBugs report: ...` 即完成，报告输出到 `build/spotbugs/`：
+
+| 文件 | 说明 |
+|------|------|
+| `spotbugs-report.html` | 可视化报告（`fancy-hist.xsl` 样式，按类别/包/类分组，可点开看说明和源码行） |
+| `spotbugs-report.xml` | 原始数据（含问题描述，便于脚本统计或导入 IDE 插件） |
+
+> 日志里的 `[spotbugs] Java Result: 1` **不是报错**：这是 SpotBugs 的退出码，1 表示「发现了问题」。构建是否成功看 `BUILD SUCCESSFUL`。
+
+### 6.3 常用参数
+
+所有配置都是 Ant property，可用 `-D` 覆盖：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `spotbugs.report.level` | `low` | 报告级别：`low`（全部）/ `medium` / `high`（只看高优先级） |
+| `spotbugs.home` | `~/.spotbugs/spotbugs-4.8.6` | 指向本地已有的 SpotBugs 安装，跳过下载 |
+| `spotbugs.download.url` | Maven Central | 下载地址，网络不通时换镜像 |
+| `spotbugs.exclude.file` | `src/java/test/config/findbugsExcludeFile.xml` | 排除规则（沿用项目原有的 FindBugs 排除文件） |
+| `spotbugs.out.dir` | `build/spotbugs` | 报告输出目录 |
+
+**Git Bash：**
+
+```bash
+# 只看高优先级
+ant spotbugs -Dspotbugs.report.level=high
+
+# 访问不了 Maven Central 时，改用阿里云镜像下载（与第 2 节同源）
+ant spotbugs -Dspotbugs.download.url=https://maven.aliyun.com/repository/public/com/github/spotbugs/spotbugs/4.8.6/spotbugs-4.8.6.tgz
+```
+
+**CMD (Windows)：**
+
+```bat
+ant spotbugs -Dspotbugs.report.level=high
+
+ant spotbugs -Dspotbugs.download.url=https://maven.aliyun.com/repository/public/com/github/spotbugs/spotbugs/4.8.6/spotbugs-4.8.6.tgz
+```
+
+**PowerShell：**（⚠️ `-D` 参数**必须加引号**）
+
+```powershell
+ant spotbugs "-Dspotbugs.report.level=high"
+
+ant spotbugs "-Dspotbugs.download.url=https://maven.aliyun.com/repository/public/com/github/spotbugs/spotbugs/4.8.6/spotbugs-4.8.6.tgz"
+```
+
+> PowerShell 会把不带引号的 `-Dspotbugs.report.level=high` 在点号处拆成两个参数，Ant 把后半截当成 target 名，报 `Target "high" does not exist`（分析其实跑完了，但构建失败、参数也没生效）。
+
+### 6.4 查看报告
+
+**Git Bash：**
+
+```bash
+start build/spotbugs/spotbugs-report.html              # 用默认浏览器打开
+grep -c '<BugInstance' build/spotbugs/spotbugs-report.xml   # 问题总数
+```
+
+**CMD (Windows)：**
+
+```bat
+start build\spotbugs\spotbugs-report.html
+findstr /c:"<BugInstance" build\spotbugs\spotbugs-report.xml | find /c /v ""
+```
+
+**PowerShell：**
+
+```powershell
+Invoke-Item build\spotbugs\spotbugs-report.html
+(Select-String -Path build\spotbugs\spotbugs-report.xml -Pattern '<BugInstance').Count
+```
+
+> 参考基线（`dev-3.3.6` 分支，`low` 级别）：共 **269** 个问题，其中高优先级 47、中 136、低 86。数量明显变化时说明代码改动引入或消除了问题。
+
+### 6.5 实现要点（改 `build.xml` 时参考）
+
+- 分析对象是 `build/classes`（依赖 `compile`，不需要打 jar）；`build/lib/*.jar` 作为辅助 classpath，`src/java/main` 和 `src/java/generated` 作为源码路径，报告能定位到源码行。
+- `fancy-hist.xsl` 是 **XSLT 2.0**，JDK 自带的 Xalan 只支持 1.0，会报一堆「语法错误」。因此 `<xslt>` 显式用 SpotBugs 自带的 **Saxon-HE**（`net.sf.saxon.TransformerFactoryImpl`）。
+- 目前发现问题**不会让构建失败**，只出报告。
+
+---
+
+## 7. 清理与从头重来
 
 分两部分：`ant clean` 能删的构建产物，和它**管不到**的本地文件。
 
-### 6.1 `ant clean`（shell 通用）
+### 7.1 `ant clean`（shell 通用）
 
 ```bash
 ant clean
 ```
 
-删除：`build/`（含编译产物 `build/classes`、依赖 `build/lib`、测试依赖 `build/test/lib`，以及数据目录 `build/zkdata`）、生成源码 `src/java/generated/`、`src/c/generated/`、`.revision/`。
+删除：`build/`（含编译产物 `build/classes`、依赖 `build/lib`、测试依赖 `build/test/lib`、SpotBugs 报告 `build/spotbugs`，以及数据目录 `build/zkdata`）、生成源码 `src/java/generated/`、`src/c/generated/`、`.revision/`。
 
 > ⚠️ `build/zkdata` 在 `build/` 下，`ant clean` 会**连同 ZooKeeper 数据一起删除**。想保留数据就把 `dataDir` 配到 `build/` 之外。
 
-### 6.2 清理本地附加文件（`ant clean` 不会动）
+### 7.2 清理本地附加文件（`ant clean` 不会动）
 
 `ide-lib/` 和 `conf/zoo.cfg` 是本文额外创建的，需手动删。
 
@@ -383,13 +483,27 @@ Remove-Item -Recurse -Force ide-lib,conf\zoo.cfg -ErrorAction SilentlyContinue
 Remove-Item -Force src\java\lib\ivy-*.jar -ErrorAction SilentlyContinue
 ```
 
-### 6.3 彻底从头（先停 server）
+SpotBugs 缓存在用户目录（见 6.1），一般无需删除；想强制重新下载时再删：
 
-完整重来的顺序：**停 server（见 5.4）→ `ant clean` → 6.2 删本地文件**，之后即可回到第 3 节重新 `ant compile`。
+```bash
+rm -rf ~/.spotbugs                               # Git Bash
+```
+
+```bat
+rmdir /s /q "%USERPROFILE%\.spotbugs"
+```
+
+```powershell
+Remove-Item -Recurse -Force "$HOME\.spotbugs"
+```
+
+### 7.3 彻底从头（先停 server）
+
+完整重来的顺序：**停 server（见 5.4）→ `ant clean` → 7.2 删本地文件**，之后即可回到第 3 节重新 `ant compile`。
 
 ---
 
-## 7. 常见坑
+## 8. 常见坑
 
 | 现象 | 原因 | 解决 |
 |------|------|------|
@@ -398,10 +512,14 @@ Remove-Item -Force src\java\lib\ivy-*.jar -ErrorAction SilentlyContinue
 | 客户端报 `Path must start with / character` | Git Bash 把 `/hello` 转成了 Windows 路径 | `export MSYS_NO_PATHCONV=1` |
 | `javac: command not found` | PATH 上是 JRE 垫片 | Ant 用 `JAVA_HOME` 编译，确保它指向 JDK 即可 |
 | 复制 junit 报「系统找不到指定的文件」 | `ant compile` 不拉测试依赖，`build/test/lib/` 不存在 | 先 `ant ivy-retrieve-test`；或跳过 junit（只编辑主源码不需要它） |
+| PowerShell 下 `ant spotbugs -D...` 报 `Target "xxx" does not exist` | PowerShell 在 `-D` 参数的点号处拆分了参数 | 给 `-D` 参数加引号：`"-Dspotbugs.report.level=high"` |
+| `ant spotbugs` 卡在 `[get]` 或报下载失败 | 访问不了 Maven Central | 用 `-Dspotbugs.download.url=` 指向阿里云镜像（见 6.3） |
+| 日志出现 `[spotbugs] Java Result: 1` | SpotBugs 退出码 1 = 发现了问题 | 不是错误，看是否 `BUILD SUCCESSFUL` |
+| 生成 HTML 时报一堆「语法错误」 | `fancy-hist.xsl` 是 XSLT 2.0，JDK 自带 Xalan 不支持 | `build.xml` 已改用 Saxon；自行改 target 时别删 `<factory>` |
 
 ---
 
-## 8. 不纳入版本库的本地文件
+## 9. 不纳入版本库的本地文件
 
 以下为本地环境产物，已加入 `.gitignore`：
 
