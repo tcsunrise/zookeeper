@@ -346,11 +346,13 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
             }
         }
 
+        // org.apache.zookeeper.server.NIOServerCnxn.Factory
         synchronized void closeSession(long sessionId) {
             selector.wakeup();
             closeSessionWithoutWakeup(sessionId);
         }
 
+        // org.apache.zookeeper.server.NIOServerCnxn.Factory
         @SuppressWarnings("unchecked")
         private void closeSessionWithoutWakeup(long sessionId) {
             HashSet<NIOServerCnxn> cnxns;
@@ -450,11 +452,11 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                 }
             }
 
+            // 加锁 -> wakeup() -> 入队 -> OP_WRITE -> 释放锁
             synchronized(this.factory){
                 sk.selector().wakeup();
                 if (LOG.isTraceEnabled()) {
-                    LOG.trace("Add a buffer to outgoingBuffers, sk " + sk
-                            + " is valid: " + sk.isValid());
+                    LOG.trace("Add a buffer to outgoingBuffers, sk " + sk+ " is valid: " + sk.isValid());
                 }
                 outgoingBuffers.add(bb);
                 if (sk.isValid()) {
@@ -516,6 +518,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         }
     }
 
+    // org.apache.zookeeper.server.NIOServerCnxn
     void doIO(SelectionKey k) throws InterruptedException {
         try {
             if (sock == null) {
@@ -603,6 +606,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                 // "outgoingBuffers.size() = " +
                 // outgoingBuffers.size());
                 // 有待发送的数据才进入发送流程；队列为空时直接跳到下面，去关闭 OP_WRITE
+                // outgoingBuffers 是连接级的，不是 Factory内字段
                 if (outgoingBuffers.size() > 0) {
                     // ZooLog.logTraceMessage(LOG,
                     // ZooLog.CLIENT_DATA_PACKET_TRACE_MASK,
@@ -1655,6 +1659,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         sendResponse(h, e, "notification");
     }
 
+    // 初始化 Session 单线程
     public void finishSessionInit(boolean valid) {
         // register with JMX
         try {
