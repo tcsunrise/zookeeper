@@ -44,6 +44,8 @@ import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
+import javax.annotation.concurrent.GuardedBy;
+
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.Record;
@@ -96,29 +98,32 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         ZooKeeperServer zks;
 
         final ServerSocketChannel ss;
-
         final Selector selector = Selector.open();
 
         /**
          * We use this buffer to do efficient socket I/O. Since there is a single
-         * sender thread per NIOServerCnxn instance, we can use a member variable to
+         * sender thread per NIOServerCnxn instance?, we can use a member variable to
          * only allocate it once.
         */
+        // 把数据拷进 directBuffer 再写出，只在 selector 线程里发生
         final ByteBuffer directBuffer = ByteBuffer.allocateDirect(64 * 1024);
 
+        // 加锁顺序：cnxns → ipMap（见 addCnxn、close）
+        @GuardedBy("itself")
         final HashSet<NIOServerCnxn> cnxns = new HashSet<NIOServerCnxn>();
-        final HashMap<InetAddress, Set<NIOServerCnxn>> ipMap =
-            new HashMap<InetAddress, Set<NIOServerCnxn>>( );
+        // ipMap 锁同时保护 map 本身和其中每个连接 Set
+        @GuardedBy("itself")
+        final HashMap<InetAddress, Set<NIOServerCnxn>> ipMap = new HashMap<InetAddress, Set<NIOServerCnxn>>( );
 
         int outstandingLimit = 1;
-
+        // the number of concurrent connections allowed from a single client.
         int maxClientCnxns = 10;
 
         /**
          * Construct a new server connection factory which will accept an unlimited number
          * of concurrent connections from each client (up to the file descriptor
          * limits of the operating system). startup(zks) must be called subsequently.
-         * @param port
+         * @param addr
          * @throws IOException
          */
         public Factory(InetSocketAddress addr) throws IOException {
@@ -130,7 +135,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
          * Constructs a new server connection factory where the number of concurrent connections
          * from a single IP address is limited to maxcc (or unlimited if 0).
          * startup(zks) must be called subsequently.
-         * @param port - the port to listen on for connections.
+         * @param addr - the port to listen on for connections.
          * @param maxcc - the number of concurrent connections allowed from a single client.
          * @throws IOException
          */
@@ -158,8 +163,12 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         public void startup(ZooKeeperServer zks) throws IOException,
                 InterruptedException {
             start();
+
+            // 启动 ZooKeeperServer
             zks.startdata();
             zks.startup();
+
+            // Factory , ZooKeeperServer 双向持有
             setZooKeeperServer(zks);
         }
 
@@ -353,13 +362,16 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         }
 
         // org.apache.zookeeper.server.NIOServerCnxn.Factory
+        // 关闭 session 在服务端就是找到对应的连接并关闭连接
         @SuppressWarnings("unchecked")
         private void closeSessionWithoutWakeup(long sessionId) {
+            // 关闭某个 Session
+            // 1. 将现有连接clone一份
             HashSet<NIOServerCnxn> cnxns;
             synchronized (this.cnxns) {
                 cnxns = (HashSet<NIOServerCnxn>)this.cnxns.clone();
             }
-
+            // 2.找到对应的连接并关闭
             for (NIOServerCnxn cnxn : cnxns) {
                 if (cnxn.sessionId == sessionId) {
                     try {
@@ -1452,6 +1464,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
     /**
      * The number of requests that have been submitted but not yet responded to.
      */
+    @GuardedBy("this")
     int outstandingRequests;
 
     /*
@@ -1741,15 +1754,24 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         private final AtomicLong packetsReceived = new AtomicLong();
         private final AtomicLong packetsSent = new AtomicLong();
 
+        @GuardedBy("this")
         private long minLatency;
+        @GuardedBy("this")
         private long maxLatency;
+        @GuardedBy("this")
         private String lastOp;
+        @GuardedBy("this")
         private long lastCxid;
+        @GuardedBy("this")
         private long lastZxid;
+        @GuardedBy("this")
         private long lastResponseTime;
+        @GuardedBy("this")
         private long lastLatency;
 
+        @GuardedBy("this")
         private long count;
+        @GuardedBy("this")
         private long totalLatency;
 
         CnxnStats() {

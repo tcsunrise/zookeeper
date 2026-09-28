@@ -36,6 +36,8 @@
     <!-- transitive false turns off dependency checking, log4j deps seem borked -->
     <dependency org="log4j" name="log4j" rev="1.2.15" transitive="false"/>
     <dependency org="jline" name="jline" rev="0.9.94" transitive="false"/>
+    <!-- @GuardedBy etc. (javax.annotation.concurrent), read by SpotBugs; not needed at runtime -->
+    <dependency org="com.google.code.findbugs" name="jsr305" rev="3.0.2" transitive="false"/>
 
     <dependency org="junit" name="junit" rev="4.8.1" conf="test->default"/>
     <dependency org="checkstyle" name="checkstyle" rev="5.0"

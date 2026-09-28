@@ -103,6 +103,7 @@ ant compile
 |-----|------|----------|----------|
 | `log4j-1.2.15.jar` | `build/lib/` | 编译主源码必需 | `ant compile` |
 | `jline-0.9.94.jar` | `build/lib/` | 编译主源码必需 | `ant compile` |
+| `jsr305-3.0.2.jar` | `build/lib/` | 编译主源码必需（`@GuardedBy` 注解，见 6.6） | `ant compile` |
 | `junit-4.8.1.jar` | `build/test/lib/` | **仅编辑测试源码时才需要** | `ant ivy-retrieve-test` |
 
 > 🚩 **最常见的坑**：直接 `copy build\test\lib\junit-4.8.1.jar` 会报「系统找不到指定的文件」。
@@ -112,7 +113,7 @@ ant compile
 > ant ivy-retrieve-test
 > ```
 >
-> 如果你只想编辑 server/client 主源码，**跳过 junit 那一行即可**，只要 log4j + jline 两个 jar。
+> 如果你只想编辑 server/client 主源码，**跳过 junit 那一行即可**，只要 log4j、jline、jsr305 三个 jar。
 
 **Git Bash：**
 
@@ -120,6 +121,7 @@ ant compile
 mkdir -p ide-lib
 cp build/lib/log4j-1.2.15.jar   ide-lib/
 cp build/lib/jline-0.9.94.jar   ide-lib/
+cp build/lib/jsr305-3.0.2.jar   ide-lib/
 # 下面这行需先 ant ivy-retrieve-test，且仅编辑测试源码时才需要
 cp build/test/lib/junit-4.8.1.jar ide-lib/
 ```
@@ -130,6 +132,7 @@ cp build/test/lib/junit-4.8.1.jar ide-lib/
 if not exist ide-lib mkdir ide-lib
 copy /y build\lib\log4j-1.2.15.jar      ide-lib\
 copy /y build\lib\jline-0.9.94.jar      ide-lib\
+copy /y build\lib\jsr305-3.0.2.jar      ide-lib\
 rem 下面这行需先 ant ivy-retrieve-test，且仅编辑测试源码时才需要
 copy /y build\test\lib\junit-4.8.1.jar  ide-lib\
 ```
@@ -138,7 +141,7 @@ copy /y build\test\lib\junit-4.8.1.jar  ide-lib\
 
 ```powershell
 New-Item -ItemType Directory -Force ide-lib | Out-Null
-Copy-Item build\lib\log4j-1.2.15.jar,build\lib\jline-0.9.94.jar ide-lib\
+Copy-Item build\lib\log4j-1.2.15.jar,build\lib\jline-0.9.94.jar,build\lib\jsr305-3.0.2.jar ide-lib\
 # 下面这行需先 ant ivy-retrieve-test，且仅编辑测试源码时才需要
 Copy-Item build\test\lib\junit-4.8.1.jar ide-lib\
 ```
@@ -454,7 +457,25 @@ ant spotbugs-mt
 
 > 参考基线（`dev-3.3.6`）：共 **16** 个并发问题，其中高优先级 3 个，全是 `VO_VOLATILE_INCREMENT`（`FastLeaderElection:659`、`AuthFastLeaderElection:765/839`）。
 
-### 6.6 实现要点（改 `build.xml` 时参考）
+### 6.6 用 `@GuardedBy` 声明字段的守护锁
+
+多线程共享的可变字段，可以用 `javax.annotation.concurrent.GuardedBy` 标明「访问它必须持有哪把锁」。SpotBugs 会据此检查：只要有一处访问没持有该锁，就报 **`IS_FIELD_NOT_GUARDED`**（属于 `MT_CORRECTNESS`，`ant spotbugs-mt` 能看到）。
+
+```java
+import javax.annotation.concurrent.GuardedBy;
+
+@GuardedBy("this")      // 锁是当前对象，即 synchronized 方法 / synchronized (this)
+int outstandingRequests;
+
+@GuardedBy("itself")    // 锁是字段引用的对象本身，即 synchronized (cnxns)
+final HashSet<NIOServerCnxn> cnxns = new HashSet<NIOServerCnxn>();
+```
+
+- 注解来自 `ivy.xml` 里的 `com.google.code.findbugs:jsr305:3.0.2`，`ant compile` 会自动拉到 `build/lib/`。它只在编译期和静态检查时有用，运行时缺这个 jar 也不影响。IDE 里要把它放进 `ide-lib/`（见 4.1）。
+- 只给**靠锁保护**的字段加。并发容器、`Atomic*`、只由单个线程访问的字段、只在启动时写一次的字段都不要加，否则会误导读代码的人。
+- 已标注的字段：`NIOServerCnxn.Factory` 的 `cnxns`、`ipMap`，`NIOServerCnxn.outstandingRequests`，`NIOServerCnxn.CnxnStats` 的各统计字段。
+
+### 6.7 实现要点（改 `build.xml` 时参考）
 
 - 分析对象是 `build/classes`（依赖 `compile`，不需要打 jar）；`build/lib/*.jar` 作为辅助 classpath，`src/java/main` 和 `src/java/generated` 作为源码路径，报告能定位到源码行。
 - **用 `<java>` 直接调 SpotBugs 命令行，而不是它自带的 `<spotbugs>` Ant task**。Ant task 会把输出拆成 `-xml:withMessages` + 单独的 `-outputFile`，这种组合下 withMessages 失效，XML 里缺 `BugPattern` 定义和 `instanceHash`，HTML 报告能看到包、**点类名却展不开**。命令行写成 `-xml:withMessages=文件` 就是完整的。
@@ -537,8 +558,9 @@ Remove-Item -Recurse -Force "$HOME\.spotbugs"
 | CMD 下编译刷屏「编码GBK的不可映射字符」，中文注释显示为乱码 | 源码是 UTF-8，中文 Windows 上 javac 默认按 GBK 读 | `build.xml` 的 `<javac>` 已统一加 `encoding="UTF-8"`；新增 `<javac>` 时记得带上 |
 | PowerShell 下 `ant spotbugs -D...` 报 `Target "xxx" does not exist` | PowerShell 在 `-D` 参数的点号处拆分了参数 | 给 `-D` 参数加引号：`"-Dspotbugs.report.level=high"` |
 | `ant spotbugs` 卡在 `[get]` 或报下载失败 | 访问不了 Maven Central | 用 `-Dspotbugs.download.url=` 指向阿里云镜像（见 6.3） |
-| HTML 报告点类名展不开 | XML 不是完整的 withMessages 格式，缺 `BugPattern` / `instanceHash`（用 `<spotbugs>` Ant task 时会这样） | 用当前 `build.xml` 重新 `ant spotbugs`（已改为调命令行，见 6.6） |
-| HTML 报告「Browse by Packages」显示 `Total number of bugs: 0` | 用了 SpotBugs 命令行的 `-html:` 选项，转换时缺包/类统计 | 用当前 `build.xml`（XML 生成后再用 `<xslt>` 转换，见 6.6） |
+| IDE 里 `import javax.annotation.concurrent.GuardedBy` 标红 | `ide-lib/` 里缺 `jsr305-3.0.2.jar` | 从 `build/lib/` 复制过去（见 4.1） |
+| HTML 报告点类名展不开 | XML 不是完整的 withMessages 格式，缺 `BugPattern` / `instanceHash`（用 `<spotbugs>` Ant task 时会这样） | 用当前 `build.xml` 重新 `ant spotbugs`（已改为调命令行，见 6.7） |
+| HTML 报告「Browse by Packages」显示 `Total number of bugs: 0` | 用了 SpotBugs 命令行的 `-html:` 选项，转换时缺包/类统计 | 用当前 `build.xml`（XML 生成后再用 `<xslt>` 转换，见 6.7） |
 | 生成 HTML 时报一堆「语法错误」 | 用 JDK 自带 Xalan 跑 XSLT 2.0 的 `fancy-hist.xsl` | `<xslt>` 里保留 Saxon 的 `<factory>`，别删 |
 
 ---
