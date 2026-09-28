@@ -584,6 +584,9 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             touch(si.cnxn);
             boolean validpacket = Request.isValid(si.type);
             if (validpacket) {
+                /**
+                 * @see PrepRequestProcessor#processRequest(Request)
+                 */
                 firstProcessor.processRequest(si);
                 if (si.cnxn != null) {
                     incInProcess();

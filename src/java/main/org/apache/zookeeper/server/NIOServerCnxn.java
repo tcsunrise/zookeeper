@@ -525,6 +525,7 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                 // 处理业务操作
                 readRequest();
             }
+            // 当前连接上，本次请求已经处理完毕
             lenBuffer.clear();
             incomingBuffer = lenBuffer;
         }
@@ -567,6 +568,9 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
                         // need not do anything else
                         return;
                     }
+                }
+                else {
+                    // 还没读满 buffer, 继续读
                 }
             }
             /*
@@ -896,8 +900,10 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
             long clientSessionId = connReq.getSessionId();
             LOG.info("Client attempting to renew session 0x" + Long.toHexString(clientSessionId)
                     + " at " + sock.socket().getRemoteSocketAddress());
+            // 清除旧的连接对象
             factory.closeSessionWithoutWakeup(clientSessionId);
             setSessionId(clientSessionId);
+            // 新开 session
             zk.reopenSession(this, sessionId, passwd, sessionTimeout);
         } else {
             LOG.info("Client attempting to establish new session at "
@@ -919,6 +925,19 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
         if (zk != null) {
             zk.serverStats().incrementPacketsSent();
         }
+    }
+
+    public static void main(String[] args) {
+        ByteBuffer buffer = ByteBuffer.wrap("gtmk".getBytes());
+        System.out.println(buffer.position()); // 0
+        int anInt = buffer.getInt();
+        System.out.println(anInt);
+        System.out.println(buffer.position()); // 4
+        System.out.println(buffer.remaining()); // 0
+        buffer.rewind();
+        System.out.println(buffer.position()); // 0
+        anInt = buffer.getInt();
+        System.out.println(anInt);
     }
 
     /*
