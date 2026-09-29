@@ -52,8 +52,10 @@ public class FileTxnSnapLog {
     //the directory containing the
     //the snapshot directory
     private final File snapDir;
+
     private TxnLog txnLog;
     private SnapShot snapLog;
+
     public final static int VERSION = 2;
     public final static String version = "version-";
     
@@ -129,6 +131,8 @@ public class FileTxnSnapLog {
     public long restore(DataTree dt, Map<Long, Integer> sessions, 
             PlayBackListener listener) throws IOException {
         snapLog.deserialize(dt, sessions);
+        // 处理 snapLog 中落后于 txnLog 的事务
+        // 将事务补充到 dt
         FileTxnLog txnLog = new FileTxnLog(dataDir);
         TxnIterator itr = txnLog.read(dt.lastProcessedZxid+1);
         long highestZxid = dt.lastProcessedZxid;
