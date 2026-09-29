@@ -1,0 +1,16 @@
+
+
+
+- ant compile
+- ant ivy-retrieve-test
+
+if not exist ide-lib mkdir ide-lib
+copy /y build\lib\log4j-1.2.15.jar      ide-lib\
+copy /y build\lib\jline-0.9.94.jar      ide-lib\
+copy /y build\test\lib\junit-4.8.1.jar  ide-lib\
+
+java -cp "build\classes;build\lib\log4j-1.2.15.jar;conf" org.apache.zookeeper.server.quorum.QuorumPeerMain conf\zoo.cfg
+
+
+set CP=build\classes;build\lib\log4j-1.2.15.jar;build\lib\jline-0.9.94.jar;conf
+java -cp "%CP%" org.apache.zookeeper.ZooKeeperMain -server 127.0.0.1:2181
