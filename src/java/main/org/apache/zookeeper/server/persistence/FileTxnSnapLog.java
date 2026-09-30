@@ -46,6 +46,9 @@ import org.apache.zookeeper.KeeperException;
  * classes
  */
 public class FileTxnSnapLog {
+    // 快照和事务日志分开存放
+    // 事务日志可以放在单独的外置高速磁盘
+
     //the direcotry containing the 
     //the transaction logs
     private final File dataDir;
@@ -130,7 +133,9 @@ public class FileTxnSnapLog {
      */
     public long restore(DataTree dt, Map<Long, Integer> sessions, 
             PlayBackListener listener) throws IOException {
+        // 先快照
         snapLog.deserialize(dt, sessions);
+        // 事务日志
         // 处理 snapLog 中落后于 txnLog 的事务
         // 将事务补充到 dt
         FileTxnLog txnLog = new FileTxnLog(dataDir);

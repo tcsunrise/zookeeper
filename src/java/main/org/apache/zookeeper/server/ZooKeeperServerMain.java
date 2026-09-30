@@ -108,6 +108,7 @@ public class ZooKeeperServerMain {
             cnxnFactory = new NIOServerCnxn.Factory(config.getClientPortAddress(),
                     config.getMaxClientCnxns());
             cnxnFactory.startup(zkServer);
+            // 等待 Factory 线程结束
             cnxnFactory.join();
             if (zkServer.isRunning()) {
                 zkServer.shutdown();

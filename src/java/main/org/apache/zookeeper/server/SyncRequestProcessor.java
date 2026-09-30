@@ -168,6 +168,7 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
     }
 
     public void shutdown() {
+        // 自杀似的
         queuedRequests.add(requestOfDeath);
         try {
             this.join();

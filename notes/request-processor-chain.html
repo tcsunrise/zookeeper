@@ -1,0 +1,354 @@
+<title>ZooKeeper 请求处理链</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --ground: #f5f6f3;
+    --surface: #ffffff;
+    --ink: #1b2320;
+    --muted: #5a6661;
+    --line: #d9ded9;
+    --accent: #0e6b68;
+    --accent-soft: #e2efed;
+    --thread: #9a5b12;
+    --thread-soft: #f6ead9;
+    --code-bg: #eceee9;
+    --sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #141a18;
+      --surface: #1b2220;
+      --ink: #e4e9e6;
+      --muted: #9aa6a1;
+      --line: #2f3a36;
+      --accent: #5cc2bc;
+      --accent-soft: #1d3432;
+      --thread: #e3a95c;
+      --thread-soft: #3a2c1a;
+      --code-bg: #222a28;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #141a18;
+    --surface: #1b2220;
+    --ink: #e4e9e6;
+    --muted: #9aa6a1;
+    --line: #2f3a36;
+    --accent: #5cc2bc;
+    --accent-soft: #1d3432;
+    --thread: #e3a95c;
+    --thread-soft: #3a2c1a;
+    --code-bg: #222a28;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font: 15px/1.7 var(--sans);
+    padding-inline: 16px;
+    padding-block: 40px 64px;
+  }
+  .page { max-width: 960px; margin: 0 auto; display: grid; gap: 48px; }
+  h1, h2, h3 { text-wrap: balance; line-height: 1.3; margin: 0; }
+  h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+  h2 { font-size: 21px; font-weight: 700; }
+  h3 { font-size: 16px; font-weight: 700; }
+  p { margin: 0; max-width: 68ch; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  header { display: grid; gap: 12px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .meta { color: var(--muted); font-size: 14px; }
+
+  section { display: grid; gap: 16px; }
+  .note { color: var(--muted); font-size: 14px; }
+
+  /* 图例 */
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+
+  /* 表格 */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: none; }
+  th {
+    font-size: 12px; font-weight: 500; color: var(--muted);
+    letter-spacing: 0.06em; background: var(--ground);
+  }
+  td.num { font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+  td.cls code { background: none; padding: 0; font-weight: 600; font-size: 13px; color: var(--ink); }
+  td.loc code { background: none; padding: 0; font-size: 12px; color: var(--muted); white-space: normal; word-break: break-all; }
+  .roles { display: flex; flex-wrap: wrap; gap: 4px; }
+  .role {
+    font-size: 12px; padding: 0 7px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+  }
+
+  /* 线程标记 */
+  .tag {
+    display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 600;
+    padding: 1px 7px; border-radius: 4px; white-space: nowrap;
+  }
+  .tag.thread { background: var(--thread-soft); color: var(--thread); }
+  .tag.sync { border: 1px dashed var(--line); color: var(--muted); }
+
+  /* 处理链 */
+  .chains { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+  @media (max-width: 480px) { .chains { grid-template-columns: 1fr; } }
+  .chain {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 18px 20px; display: grid; gap: 14px; align-content: start;
+  }
+  .chain-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .chain-head code { font-size: 12px; color: var(--muted); background: none; padding: 0; }
+  .flow-block { display: grid; gap: 6px; }
+  .flow-label { font-size: 12px; color: var(--muted); }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .node {
+    font-family: var(--mono); font-size: 13px; font-weight: 500;
+    padding: 4px 10px; border-radius: 5px; white-space: nowrap;
+    border: 1px solid var(--line); background: var(--ground); color: var(--ink);
+  }
+  .node.t { border-color: var(--thread); background: var(--thread-soft); color: var(--thread); }
+  .node.end { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .arrow { color: var(--muted); font-family: var(--mono); font-size: 13px; }
+  .branch {
+    margin-left: 18px; padding-left: 14px; border-left: 2px solid var(--line);
+    display: grid; gap: 6px;
+  }
+  .aside { font-size: 13px; color: var(--muted); }
+  .quote {
+    font-size: 13px; color: var(--muted);
+    border-top: 1px solid var(--line); padding-top: 12px;
+  }
+  .quote em { font-style: normal; font-family: var(--mono); color: var(--ink); }
+
+  /* 要点 */
+  .points { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+  .points li {
+    display: grid; gap: 4px; padding: 14px 18px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  }
+  .points strong { font-size: 15px; }
+  .points .en { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .points p { color: var(--muted); font-size: 14px; }
+</style>
+
+<main class="page">
+  <header>
+    <div class="eyebrow">ZooKeeper 3.3.6 · dev-3.3.6</div>
+    <h1>RequestProcessor 实现与处理链</h1>
+    <p class="meta">整理自 2026-09-30 的源码阅读讨论。涉及 <code>server/RequestProcessor.java</code> 及其各实现类、<code>ZooKeeperServer.java</code>、<code>quorum/LeaderZooKeeperServer.java</code>、<code>quorum/FollowerZooKeeperServer.java</code>、<code>quorum/ObserverZooKeeperServer.java</code>。</p>
+  </header>
+
+  <section>
+    <h2>全部实现类</h2>
+    <p class="note">共 10 个，均在 <code>src/java/main</code>，测试代码中没有其他实现。路径相对于 <code>src/java/main/org/apache/zookeeper/</code>。</p>
+    <div class="legend">
+      <span><span class="tag thread">Thread</span>继承 Thread，自带队列，<code>processRequest()</code> 只负责入队</span>
+      <span><span class="tag sync">同步</span>在上游线程中被直接调用</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>类</th><th>位置</th><th>线程</th><th>使用角色</th><th>职责</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="num">1</td>
+            <td class="cls"><code>PrepRequestProcessor</code></td>
+            <td class="loc"><code>server/PrepRequestProcessor.java:64</code></td>
+            <td><span class="tag thread">Thread</span></td>
+            <td><div class="roles"><span class="role">单机</span><span class="role">Leader</span></div></td>
+            <td>预处理：校验 ACL / 版本，生成事务头（分配 zxid）与事务体</td>
+          </tr>
+          <tr>
+            <td class="num">2</td>
+            <td class="cls"><code>SyncRequestProcessor</code></td>
+            <td class="loc"><code>server/SyncRequestProcessor.java:35</code></td>
+            <td><span class="tag thread">Thread</span></td>
+            <td><div class="roles"><span class="role">单机</span><span class="role">Leader</span><span class="role">Follower</span><span class="role">Observer</span></div></td>
+            <td>写事务日志、组提交 fsync，触发 rollLog 与快照</td>
+          </tr>
+          <tr>
+            <td class="num">3</td>
+            <td class="cls"><code>FinalRequestProcessor</code></td>
+            <td class="loc"><code>server/FinalRequestProcessor.java:68</code></td>
+            <td><span class="tag sync">同步</span></td>
+            <td><div class="roles"><span class="role">所有角色</span></div></td>
+            <td>应用到 DataTree，构造响应并回复客户端（链的最后一环）</td>
+          </tr>
+          <tr>
+            <td class="num">4</td>
+            <td class="cls"><code>ProposalRequestProcessor</code></td>
+            <td class="loc"><code>server/quorum/ProposalRequestProcessor.java:30</code></td>
+            <td><span class="tag sync">同步</span></td>
+            <td><div class="roles"><span class="role">Leader</span></div></td>
+            <td>把写请求作为提案广播给 Follower，同时交给本地 Sync 落盘</td>
+          </tr>
+          <tr>
+            <td class="num">5</td>
+            <td class="cls"><code>AckRequestProcessor</code></td>
+            <td class="loc"><code>server/quorum/AckRequestProcessor.java:31</code></td>
+            <td><span class="tag sync">同步</span></td>
+            <td><div class="roles"><span class="role">Leader</span></div></td>
+            <td>Leader 本地落盘后给自己记一票 ACK（<code>leader.processAck</code>）</td>
+          </tr>
+          <tr>
+            <td class="num">6</td>
+            <td class="cls"><code>CommitProcessor</code></td>
+            <td class="loc"><code>server/quorum/CommitProcessor.java:35</code></td>
+            <td><span class="tag thread">Thread</span></td>
+            <td><div class="roles"><span class="role">Leader</span><span class="role">Follower</span><span class="role">Observer</span></div></td>
+            <td>写请求等到收到 COMMIT 才放行，读请求直接通过，保证会话内顺序</td>
+          </tr>
+          <tr>
+            <td class="num">7</td>
+            <td class="cls"><code>Leader.ToBeAppliedRequestProcessor</code></td>
+            <td class="loc"><code>server/quorum/Leader.java:528</code>（静态内部类）</td>
+            <td><span class="tag sync">同步</span></td>
+            <td><div class="roles"><span class="role">Leader</span></div></td>
+            <td>请求交给 Final 后，从 <code>toBeApplied</code> 队列中移除</td>
+          </tr>
+          <tr>
+            <td class="num">8</td>
+            <td class="cls"><code>FollowerRequestProcessor</code></td>
+            <td class="loc"><code>server/quorum/FollowerRequestProcessor.java:34</code></td>
+            <td><span class="tag thread">Thread</span></td>
+            <td><div class="roles"><span class="role">Follower</span></div></td>
+            <td>客户端请求入口：写请求转发给 Leader，所有请求交给 CommitProcessor</td>
+          </tr>
+          <tr>
+            <td class="num">9</td>
+            <td class="cls"><code>ObserverRequestProcessor</code></td>
+            <td class="loc"><code>server/quorum/ObserverRequestProcessor.java:34</code></td>
+            <td><span class="tag thread">Thread</span></td>
+            <td><div class="roles"><span class="role">Observer</span></div></td>
+            <td>同 Follower 版本，写请求转发给 Leader</td>
+          </tr>
+          <tr>
+            <td class="num">10</td>
+            <td class="cls"><code>SendAckRequestProcessor</code></td>
+            <td class="loc"><code>server/quorum/SendAckRequestProcessor.java:30</code>（同时实现 <code>Flushable</code>）</td>
+            <td><span class="tag sync">同步</span></td>
+            <td><div class="roles"><span class="role">Follower</span><span class="role">Observer</span></div></td>
+            <td>本地落盘后给 Leader 发 ACK</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>各角色的处理链</h2>
+    <p class="note">各角色的处理链都在对应类的 <code>setupRequestProcessors()</code> 中组装。橙色节点是独立线程，绿色节点负责回复客户端或投票。</p>
+    <div class="chains">
+
+      <article class="chain">
+        <div class="chain-head"><h3>单机</h3><code>ZooKeeperServer.java:387</code></div>
+        <div class="flow">
+          <span class="node t">Prep</span><span class="arrow">→</span>
+          <span class="node t">Sync</span><span class="arrow">→</span>
+          <span class="node end">Final</span>
+        </div>
+      </article>
+
+      <article class="chain">
+        <div class="chain-head"><h3>Leader</h3><code>LeaderZooKeeperServer.java:60</code></div>
+        <div class="flow">
+          <span class="node t">Prep</span><span class="arrow">→</span>
+          <span class="node">Proposal</span><span class="arrow">→</span>
+          <span class="node t">Commit</span><span class="arrow">→</span>
+          <span class="node">ToBeApplied</span><span class="arrow">→</span>
+          <span class="node end">Final</span>
+        </div>
+        <div class="branch">
+          <span class="flow-label">Proposal 内部 spawn，给自己投 ACK</span>
+          <div class="flow">
+            <span class="node t">Sync</span><span class="arrow">→</span>
+            <span class="node end">Ack</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="chain">
+        <div class="chain-head"><h3>Follower</h3><code>FollowerZooKeeperServer.java:72</code></div>
+        <div class="flow-block">
+          <span class="flow-label">客户端请求链</span>
+          <div class="flow">
+            <span class="node t">FollowerRP</span><span class="arrow">→</span>
+            <span class="node t">Commit</span><span class="arrow">→</span>
+            <span class="node end">Final</span>
+          </div>
+        </div>
+        <div class="flow-block">
+          <span class="flow-label">Leader 提案日志链，由 <code>logRequest()</code> 喂入</span>
+          <div class="flow">
+            <span class="node t">Sync</span><span class="arrow">→</span>
+            <span class="node end">SendAck</span>
+          </div>
+        </div>
+        <p class="quote">注释 <em>"A SyncRequestProcessor is also spawned off to log proposals from the leader"</em> 中的 spawn off 指的就是第二条链：另起一个独立的 <code>SyncRequestProcessor</code> 线程，它不在客户端请求链上。</p>
+      </article>
+
+      <article class="chain">
+        <div class="chain-head"><h3>Observer</h3><code>ObserverZooKeeperServer.java:84</code></div>
+        <div class="flow-block">
+          <span class="flow-label">客户端请求链</span>
+          <div class="flow">
+            <span class="node t">ObserverRP</span><span class="arrow">→</span>
+            <span class="node t">Commit</span><span class="arrow">→</span>
+            <span class="node end">Final</span>
+          </div>
+        </div>
+        <div class="flow-block">
+          <span class="flow-label">提案日志链</span>
+          <div class="flow">
+            <span class="node t">Sync</span><span class="arrow">→</span>
+            <span class="node end">SendAck</span>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>要点</h2>
+    <ul class="points">
+      <li>
+        <strong>先持久化，再生效和应答</strong>
+        <span class="en">persist first, then apply and acknowledge</span>
+        <p><code>SyncRequestProcessor</code> 在 fsync 完成后才把请求交给下一个处理器。单机模式下下一个是 Final，负责生效和回复客户端；集群模式下是 Ack / SendAck，负责投票。</p>
+      </li>
+      <li>
+        <strong>写请求在集群中的生效时机</strong>
+        <p>Follower / Observer 上，写请求要等 Leader 发来 COMMIT，经 <code>CommitProcessor</code> 放行后才会到达 Final 并应用到 DataTree。</p>
+      </li>
+      <li>
+        <strong>Leader 自己也要落盘并投票</strong>
+        <p><code>ProposalRequestProcessor</code> 在广播提案的同时交给本地的 Sync → Ack，Leader 自己的这一票也要等本地 fsync 完成后才计入。</p>
+      </li>
+    </ul>
+  </section>
+</main>

@@ -103,6 +103,10 @@ public class FileSnap implements SnapShot {
         if (!foundValid) {
             throw new IOException("Not able to find valid snapshots in " + snapDir);
         }
+        // 快照文件名后缀是开始拍快照时的 lastProcessedZxid（见 FileTxnSnapLog.save()），
+        // 而非快照内容中的最大 zxid：拍快照在独立线程中进行，期间事务仍在持续应用到 DataTree，
+        // 因此快照是"模糊快照"——至少包含 zxid <= 后缀的全部事务，也可能包含部分更大 zxid 的事务。
+        // restore() 会从 lastProcessedZxid + 1 开始回放事务日志，重复应用的事务是幂等的，不影响最终状态。
         dt.lastProcessedZxid = Util.getZxidFromName(snap.getName(), "snapshot");
         return dt.lastProcessedZxid;
     }
@@ -115,15 +119,15 @@ public class FileSnap implements SnapShot {
      * @throws IOException
      */
     public void deserialize(DataTree dt, Map<Long, Integer> sessions,
-            InputArchive ia) throws IOException {
+                            InputArchive ia) throws IOException {
         FileHeader header = new FileHeader();
         header.deserialize(ia, "fileheader");
         if (header.getMagic() != SNAP_MAGIC) {
             throw new IOException("mismatching magic headers "
-                    + header.getMagic() + 
+                    + header.getMagic() +
                     " !=  " + FileSnap.SNAP_MAGIC);
         }
-        SerializeUtils.deserializeSnapshot(dt,ia,sessions);
+        SerializeUtils.deserializeSnapshot(dt, ia, sessions);
     }
 
     /**

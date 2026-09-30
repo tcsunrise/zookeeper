@@ -165,7 +165,9 @@ public class NIOServerCnxn implements Watcher, ServerCnxn {
             start();
 
             // 启动 ZooKeeperServer
+            // 1/ 恢复数据
             zks.startdata();
+            // 2/ 启动服务
             zks.startup();
 
             // Factory , ZooKeeperServer 双向持有
