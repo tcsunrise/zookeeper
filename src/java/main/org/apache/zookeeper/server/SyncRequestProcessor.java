@@ -90,6 +90,8 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
             int randRoll = r.nextInt(snapCount/2);
             while (true) {
                 Request si = null;
+                // 1. 缓冲区空的，就等请求队列
+                // 2. 否则, 从请求队列取请求
                 if (toFlush.isEmpty()) {
                     si = queuedRequests.take();
                 } else {
@@ -103,9 +105,12 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
                     break;
                 }
                 if (si != null) {
+
                     // track the number of records written to the log
-                    if (zks.getZKDatabase().append(si)) {
+                    if (zks.getZKDatabase().append(si))
+                    {
                         logCount++;
+                        // 至少一半
                         if (logCount > (snapCount / 2 + randRoll)) {
                             randRoll = r.nextInt(snapCount/2);
                             // roll the log
@@ -125,9 +130,13 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
                                     };
                                 snapInProcess.start();
                             }
+                            // 重置为0
                             logCount = 0;
                         }
-                    } else if (toFlush.isEmpty()) {
+                    }
+                    // 读请求 append() 会返回 false
+                    else if (toFlush.isEmpty())
+                    {
                         // optimization for read heavy workloads
                         // iff this is a read, and there are no pending
                         // flushes (writes), then just pass this to the next
@@ -138,6 +147,7 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
                         }
                         continue;
                     }
+
                     toFlush.add(si);
                     if (toFlush.size() > 1000) {
                         flush(toFlush);
@@ -157,7 +167,9 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
         if (toFlush.isEmpty())
             return;
 
+        // commit 之后再传递给下一个
         zks.getZKDatabase().commit();
+        // 依次传递
         while (!toFlush.isEmpty()) {
             Request i = toFlush.remove();
             nextProcessor.processRequest(i);
@@ -168,7 +180,7 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
     }
 
     public void shutdown() {
-        // 自杀似的
+        // 自杀式的，往队列投递一个控制对象
         queuedRequests.add(requestOfDeath);
         try {
             this.join();
