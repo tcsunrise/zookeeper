@@ -264,6 +264,10 @@ set CP=build\classes;build\lib\log4j-1.2.15.jar;build\lib\jline-0.9.94.jar;conf
 java -cp "%CP%" org.apache.zookeeper.ZooKeeperMain -server 127.0.0.1:2181 create /hello world
 java -cp "%CP%" org.apache.zookeeper.ZooKeeperMain -server 127.0.0.1:2181 get /hello
 java -cp "%CP%" org.apache.zookeeper.ZooKeeperMain -server 127.0.0.1:2181 ls /
+
+java -cp "%CP%" org.apache.zookeeper.server.LogFormatter version-2/log.1
+java -cp "%CP%" org.apache.zookeeper.server.LogFormatter version-2/log.1
+
 ```
 
 **PowerShell：**
