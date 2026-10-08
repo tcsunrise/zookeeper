@@ -43,8 +43,6 @@ import org.apache.zookeeper.server.quorum.QuorumPeer.ServerState;
  * finalizeWait determines the amount of time to wait until deciding upon a leader.
  * This is part of the leader election algorithm.
  */
-
-
 public class FastLeaderElection implements Election {
     private static final Logger LOG = Logger.getLogger(FastLeaderElection.class);
 
@@ -69,7 +67,6 @@ public class FastLeaderElection implements Election {
      * communication between peers, and QuorumCnxManager manages
      * such connections.
      */
-
     QuorumCnxManager manager;
 
 
@@ -171,7 +168,6 @@ public class FastLeaderElection implements Election {
          * Receives messages from instance of QuorumCnxManager on
          * method run(), and processes such messages.
          */
-
         class WorkerReceiver implements Runnable {
             volatile boolean stop;
             QuorumCnxManager manager;
@@ -309,12 +305,10 @@ public class FastLeaderElection implements Election {
             }
         }
 
-
         /**
          * This worker simply dequeues a message to send and
          * and queues it on the manager's queue.
          */
-
         class WorkerSender implements Runnable {
             volatile boolean stop;
             QuorumCnxManager manager;
@@ -637,57 +631,52 @@ public class FastLeaderElection implements Election {
             self.jmxLeaderElectionBean = new LeaderElectionBean();
             MBeanRegistry.getInstance().register(
                     self.jmxLeaderElectionBean, self.jmxLocalPeerBean);
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             LOG.warn("Failed to register with JMX", e);
             self.jmxLeaderElectionBean = null;
         }
 
         try {
             HashMap<Long, Vote> recvset = new HashMap<Long, Vote>();
-
             HashMap<Long, Vote> outofelection = new HashMap<Long, Vote>();
 
             int notTimeout = finalizeWait;
 
-            synchronized(this){
+            synchronized (this) {
                 logicalclock++;
-                    updateProposal(getInitId(), getInitLastLoggedZxid());
+                updateProposal(getInitId(), getInitLastLoggedZxid());
             }
 
-            LOG.info("New election. My id =  " + self.getId() +
-                    ", Proposed zxid = " + proposedZxid);
+            LOG.info("New election. My id =  " + self.getId() + ", Proposed zxid = " + proposedZxid);
             sendNotifications();
 
             /*
              * Loop in which we exchange notifications until we find a leader
              */
 
-            while ((self.getPeerState() == ServerState.LOOKING) &&
-                    (!stop)){
+            while ((self.getPeerState() == ServerState.LOOKING) && (!stop)){
                 /*
                  * Remove next notification from queue, times out after 2 times
                  * the termination time
                  */
-                Notification n = recvqueue.poll(notTimeout,
-                        TimeUnit.MILLISECONDS);
+                Notification n = recvqueue.poll(notTimeout, TimeUnit.MILLISECONDS);
 
                 /*
                  * Sends more notifications if haven't received enough.
                  * Otherwise processes new notification.
                  */
-                if(n == null){
-                    if(manager.haveDelivered()){
+                if (n == null) {
+                    if (manager.haveDelivered()) {
                         sendNotifications();
                     } else {
                         manager.connectAll();
                     }
-
                     /*
                      * Exponential backoff
                      */
-                    int tmpTimeOut = notTimeout*2;
-                    notTimeout = (tmpTimeOut < maxNotificationInterval?
-                            tmpTimeOut : maxNotificationInterval);
+                    int tmpTimeOut = notTimeout * 2;
+                    notTimeout = (tmpTimeOut < maxNotificationInterval ? tmpTimeOut : maxNotificationInterval);
                     LOG.info("Notification time out: " + notTimeout);
                 }
                 else{
@@ -821,7 +810,8 @@ public class FastLeaderElection implements Election {
             }
 
             return null;
-        } finally {
+        }
+        finally {
             try {
                 if(self.jmxLeaderElectionBean != null){
                     MBeanRegistry.getInstance().unregister(

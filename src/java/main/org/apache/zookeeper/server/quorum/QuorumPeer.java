@@ -180,7 +180,6 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
     /**
      * QuorumVerifier implementation; default (majority). 
      */
-    
     private QuorumVerifier quorumConfig;
     
     /**
