@@ -301,8 +301,7 @@ public class FileTxnLog implements TxnLog {
     }
 
     /**
-     * commit the logs. make sure that evertyhing hits the
-     * disk
+     * commit the logs. make sure that everything hits the disk
      */
     public synchronized void commit() throws IOException {
         if (logStream != null) {

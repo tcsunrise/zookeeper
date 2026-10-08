@@ -76,9 +76,11 @@ public class DataTree {
     private final ConcurrentHashMap<String, DataNode> nodes =
         new ConcurrentHashMap<String, DataNode>();
 
+    // Data Watches
     private final WatchManager dataWatches = new WatchManager();
-
+    // Child Watches
     private final WatchManager childWatches = new WatchManager();
+
 
     /** the root of zookeeper tree */
     private static final String rootZookeeper = "/";

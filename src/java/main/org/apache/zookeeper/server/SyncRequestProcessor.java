@@ -113,9 +113,9 @@ public class SyncRequestProcessor extends Thread implements RequestProcessor {
                         // 至少一半
                         if (logCount > (snapCount / 2 + randRoll)) {
                             randRoll = r.nextInt(snapCount/2);
-                            // roll the log
+                            // (1) roll the log
                             zks.getZKDatabase().rollLog();
-                            // take a snapshot
+                            // (2) take a snapshot
                             if (snapInProcess != null && snapInProcess.isAlive()) {
                                 LOG.warn("Too busy to snap, skipping");
                             } else {

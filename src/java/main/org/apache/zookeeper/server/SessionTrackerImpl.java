@@ -249,7 +249,8 @@ public class SessionTrackerImpl extends Thread implements SessionTracker {
         touchSession(id, sessionTimeout);
     }
 
-    synchronized public void checkSession(long sessionId, Object owner) throws KeeperException.SessionExpiredException, KeeperException.SessionMovedException {
+    synchronized public void checkSession(long sessionId, Object owner)
+            throws KeeperException.SessionExpiredException, KeeperException.SessionMovedException {
         SessionImpl session = sessionsById.get(sessionId);
         if (session == null || session.isClosing()) {
             throw new KeeperException.SessionExpiredException();
