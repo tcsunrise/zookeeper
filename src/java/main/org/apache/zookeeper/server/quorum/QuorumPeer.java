@@ -172,6 +172,7 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
      * The servers that make up the cluster
      */
     protected Map<Long, QuorumServer> quorumPeers;
+    // 只有 participant 才能成为 Quorum，返回的大小不包括 observer
     public int getQuorumSize(){
         return getVotingView().size();
     }
@@ -187,7 +188,6 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
      */
     private long myid;
 
-
     /**
      * get the id of this quorum peer.
      */
@@ -199,15 +199,12 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
      * This is who I think the leader currently is.
      */
     volatile private Vote currentVote;
-        
     public synchronized Vote getCurrentVote(){
         return currentVote;
     }
-       
     public synchronized void setCurrentVote(Vote v){
         currentVote = v;
     }    
-
     volatile boolean running = true;
 
     /**
@@ -498,7 +495,8 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
         }
         return lastLogged;
     }
-    
+
+    // leader / follower / observer
     public Follower follower;
     public Leader leader;
     public Observer observer;
@@ -605,7 +603,8 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
                     }
                 }
             }
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             LOG.warn("Failed to register with JMX", e);
             jmxQuorumBean = null;
         }
@@ -669,7 +668,8 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
                     break;
                 }
             }
-        } finally {
+        }
+        finally {
             LOG.warn("QuorumPeer main thread exited");
             try {
                 MBeanRegistry.getInstance().unregisterAll();
@@ -705,8 +705,7 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
     }
 
     /**
-     * A 'view' is a node's current opinion of the membership of the entire
-     * ensemble.    
+     * A 'view' is a node's current opinion of the membership of the entire ensemble.
      */
     public Map<Long,QuorumPeer.QuorumServer> getView() {
         return Collections.unmodifiableMap(this.quorumPeers);
@@ -717,14 +716,13 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
      * PeerType=PARTICIPANT.     
      */
     public Map<Long,QuorumPeer.QuorumServer> getVotingView() {
-        Map<Long,QuorumPeer.QuorumServer> ret = 
-            new HashMap<Long, QuorumPeer.QuorumServer>();
+        Map<Long,QuorumPeer.QuorumServer> ret = new HashMap<Long, QuorumPeer.QuorumServer>();
         Map<Long,QuorumPeer.QuorumServer> view = getView();
         for (QuorumServer server : view.values()) {            
             if (server.type == LearnerType.PARTICIPANT) {
                 ret.put(server.id, server);
             }
-        }        
+        }
         return ret;
     }
     

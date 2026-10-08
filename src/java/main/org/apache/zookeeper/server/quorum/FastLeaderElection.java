@@ -369,7 +369,6 @@ public class FastLeaderElection implements Election {
             return (sendqueue.isEmpty() || recvqueue.isEmpty());
         }
 
-
         WorkerSender ws;
         WorkerReceiver wr;
 
@@ -379,18 +378,13 @@ public class FastLeaderElection implements Election {
          * @param manager   Connection manager
          */
         Messenger(QuorumCnxManager manager) {
-
             this.ws = new WorkerSender(manager);
-
-            Thread t = new Thread(this.ws,
-                    "WorkerSender Thread");
+            Thread t = new Thread(this.ws, "WorkerSender Thread");
             t.setDaemon(true);
             t.start();
 
             this.wr = new WorkerReceiver(manager);
-
-            t = new Thread(this.wr,
-                                    "WorkerReceiver Thread");
+            t = new Thread(this.wr, "WorkerReceiver Thread");
             t.setDaemon(true);
             t.start();
         }

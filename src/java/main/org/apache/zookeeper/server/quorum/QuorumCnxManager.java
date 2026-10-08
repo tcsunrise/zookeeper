@@ -73,13 +73,11 @@ public class QuorumCnxManager {
     /*
      * Negative counter for observer server ids.
      */
-    
     private long observerCounter = -1;
     
     /*
      * Connection time out value in milliseconds 
      */
-    
     private int cnxTO = 5000;
     
     /*
@@ -102,7 +100,6 @@ public class QuorumCnxManager {
     /*
      * Shutdown flag
      */
-
     volatile boolean shutdown = false;
 
     /*
@@ -163,7 +160,6 @@ public class QuorumCnxManager {
      * If this server has initiated the connection, then it gives up on the
      * connection if it loses challenge. Otherwise, it keeps the connection.
      */
-
     public boolean initiateConnection(SocketChannel s, Long sid) {
          try {
             // Sending id and challenge
@@ -187,8 +183,9 @@ public class QuorumCnxManager {
                 LOG.warn("Ignoring exception when closing socket or trying to "
                         + "reopen connection: ", e);
             }
+        }
         // Otherwise proceed with the connection
-        } else {    
+        else {
             SendWorker sw = new SendWorker(s, sid);
             RecvWorker rw = new RecvWorker(s, sid, sw);
             sw.setRecv(rw);
@@ -241,13 +238,15 @@ public class QuorumCnxManager {
                 sid = observerCounter--;
                 LOG.info("Setting arbitrary identifier to observer: " + sid);
             }
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             LOG.warn("Exception reading or writing challenge: "
                     + e.toString());
             return false;
         }
-        
-        //If wins the challenge, then close the new connection.
+
+        // 总是 由 sid 大的 去主动连 sid 小的
+        // If wins the challenge, then close the new connection.
         if (sid < self.getId()) {
             try {
                 /*
@@ -270,8 +269,9 @@ public class QuorumCnxManager {
                 LOG.info("Error when closing socket or trying to reopen connection: "
                                 + e.toString());
             }
-        //Otherwise start worker threads to receive data.
-        } else {
+        }
+        // Otherwise start worker threads to receive data.
+        else {
             SendWorker sw = new SendWorker(s, sid);
             RecvWorker rw = new RecvWorker(s, sid, sw);
             sw.setRecv(rw);
@@ -718,8 +718,7 @@ public class QuorumCnxManager {
                     }
                     message.position(0);
                     synchronized (recvQueue) {
-                        recvQueue
-                        .put(new Message(message.duplicate(), sid));
+                        recvQueue.put(new Message(message.duplicate(), sid));
                     }
                     msgLength.position(0);
                 }
