@@ -1,0 +1,164 @@
+ZooKeeper 源码学习 Quiz
+日期：2026-10-08
+主题：QuorumPeer 核心字段与状态机、QuorumCnxManager 选举连接管理、QuorumPeerConfig 解析与 QuorumVerifier
+学习内容摘要：梳理了 QuorumPeer 的核心成员（state/currentVote/electionAlg/qcm/quorumConfig/zkDb 及 tickTime、initLimit、syncLimit、session 超时等参数），
+以及内部类型 QuorumServer、ServerState、LearnerType；阅读了 QuorumCnxManager（选举通信层）、QuorumPeerConfig（zoo.cfg 解析）、
+QuorumVerifier 的两种实现 QuorumMaj / QuorumHierarchical，以及 QuorumStats。
+涉及源码：QuorumPeer, QuorumPeer.QuorumServer, QuorumPeer.ServerState, QuorumPeer.LearnerType, QuorumCnxManager, QuorumPeerConfig, QuorumVerifier, QuorumMaj, QuorumHierarchical, QuorumStats
+==================================================
+
+第 1 题 [概念理解] ★
+QuorumPeer 中同时存在 ServerState（字段 state）和 LearnerType（字段 learnerType）两个枚举。
+(1) 分别写出它们的取值；
+(2) 说明二者语义上的区别：哪个是"会随运行变化的"，哪个是"配置决定、基本不变的"？
+(3) 一个配置为 observer 的节点，在正常运行过程中 state 会经历哪些取值？它会不会进入 LEADING / FOLLOWING？
+提示：看 LearnerType 上方的注释，以及 QuorumPeer#run 中 LOOKING 分支如何决定下一步状态（可顺带看 FastLeaderElection 中对 learnerType 的判断）。
+
+【我的答案】
+(1) state 取值：looking , following, leading, observing;
+    learnerType 取值: participant, observer.
+(2) state 是会变化的：每个Peer在启动时，都是looking状态，走完选举流程之后，成为leader的节点为leading状态，成为follower的节点
+    为 following 状态；
+    learnerType 不会变化：这个字段来源于配置 org.apache.zookeeper.server.quorum.QuorumPeerConfig.peerType，peerType取配置文件
+    中 peerType；当 peerType = 'observer' 时，learnerType = 'observer', peerType 默认值为 participant。
+    // 代码段如下：
+    else if (key.equals("peerType")) {
+        if (value.toLowerCase().equals("observer")) {
+            peerType = LearnerType.OBSERVER;
+        } else if (value.toLowerCase().equals("participant")) {
+            peerType = LearnerType.PARTICIPANT;
+        } else
+        {
+            throw new ConfigException("Unrecognised peertype: " + value);
+        }
+    }
+(3) 从 LearnerType doc 以及 QuorumPeer#run 方法判断：
+    一个配置为 observer 的节点，在运行过程中仅仅会经历 looking 和 observing 两个状态。
+    在 QuorumPeer#run 方法中 while 主循环中，当 observing 的状态发生变化时，在finally块中设置了 state = looking.
+    所以 observer 节点主要在 looking 和  observing 两个状态切换。
+
+
+--------------------------------------------------
+
+第 2 题 [概念理解] ★
+QuorumVerifier 接口只有两个方法。
+(1) 写出这两个方法的签名和含义；
+(2) QuorumMaj 构造函数参数 n 在 QuorumPeerConfig#parseProperties 中传入的是什么？此时 n 是否包含 observer？
+(3) 若 zoo.cfg 配置了 5 个 participant + 2 个 observer，QuorumMaj.half 是多少？containsQuorum 至少需要多少个 sid 才返回 true？
+提示：注意 quorumVerifier 的创建与 servers.putAll(observers) 这两行的先后顺序。
+
+【我的答案】
+
+
+
+--------------------------------------------------
+
+第 3 题 [流程梳理] ★★
+按顺序写出 QuorumPeer#start() 中的各步骤，并展开 startLeaderElection() 内部做了哪些事情（至少包括：currentVote 的初始值、myQuorumAddr 的确定、electionType=3 时 qcm 与 Listener 的创建/启动）。
+追问：为什么 zkDb.loadDataBase() 必须放在 startLeaderElection() 之前？
+提示：Vote 构造参数里用到了 getLastLoggedZxid()。
+
+【我的答案】
+
+
+
+--------------------------------------------------
+
+第 4 题 [流程梳理] ★★
+QuorumPeer#run() 的 while(running) 主循环是一个状态机。
+(1) 分别说明 LOOKING / OBSERVING / FOLLOWING / LEADING 四个分支各调用了什么方法（make* 工厂方法 + 阻塞的主方法）；
+(2) 后三个分支在 finally 里都做了什么？为什么无论正常返回还是异常都要回到 LOOKING？
+(3) 字段 follower / leader / observer 在什么时候被置为非 null、什么时候置回 null？getActiveServer() 依赖它们做什么？
+
+【我的答案】
+
+
+
+--------------------------------------------------
+
+第 5 题 [流程梳理] ★★★
+以 FastLeaderElection 发出一张选票为起点，描述消息经过 QuorumCnxManager 发往对端、再被对端选举线程读到的完整路径。要求覆盖：
+- toSend(sid, b) 中 sid == 自己 时的特殊处理；
+- queueSendMap / senderWorkerMap / lastMessageSent 三个 Map 各自的作用；
+- connectOne → initiateConnection 建连时首先写出的 8 个字节是什么；
+- SendWorker#send 的线上报文格式；
+- 对端 RecvWorker#run 如何读取并放入 recvQueue，对长度有哪些校验（PACKETMAXSIZE）。
+提示：注意 SendWorker#run 刚启动时会先做一件"补发"的事。
+
+【我的答案】
+
+
+
+--------------------------------------------------
+
+第 6 题 [源码定位] ★
+四字命令 stat 的输出中会出现 "Mode: follower" 以及 "Leader: /x.x.x.x:port" 或 "Followers: ..." 等信息。
+(1) QuorumStats 自身并不持有状态，它通过什么接口拿数据？该接口由哪个类实现？
+(2) 在 Leader 上，getQuorumPeers() 返回的地址后面有时带一个 "*"，这个星号表示什么？对应哪个判断方法？
+(3) ServerState.LOOKING 映射成的字符串是什么？
+
+【我的答案】
+
+
+
+--------------------------------------------------
+
+第 7 题 [源码定位] ★★
+关于配置项从 zoo.cfg 到 QuorumPeer 字段的落地：
+(1) "server.N=host:port1:port2:type" 中 port1、port2、type 分别对应 QuorumServer 的哪个字段？port1 和 port2 各自被谁使用（集群数据同步 vs 选举）？
+(2) myid 是在 QuorumPeerConfig 的哪个方法、从哪个文件读取的？
+(3) 未配置 minSessionTimeout / maxSessionTimeout 时，QuorumPeer 返回的默认值分别是多少？对应哪两个 getter？QuorumPeerConfig 中对二者做了什么一致性校验？
+(4) Leader / Learner 中 tickTime 与 initLimit、syncLimit 是如何组合成具体超时时间的？各举一处代码位置。
+
+【我的答案】
+
+
+
+--------------------------------------------------
+
+第 8 题 [场景分析] ★★
+集群中 sid=1 和 sid=3 两台机器在选举时几乎同时向对方发起 TCP 连接。
+(1) 结合 QuorumCnxManager#initiateConnection 和 #receiveConnection，说明最终只会保留哪一个方向的连接，规则是什么？
+(2) 如果 sid=1 先单方面连上了 sid=3，sid=3 收到连接后会怎么做？
+(3) 一个 observer 若以 QuorumPeer.OBSERVER_ID（Long.MAX_VALUE）作为身份连进来，receiveConnection 如何为它分配 sid？这样做可能带来什么副作用？
+提示：比较 sid 与 self.getId() 的那两处 if。
+
+【我的答案】
+
+
+
+--------------------------------------------------
+
+第 9 题 [场景分析] ★★★
+zoo.cfg 中配置了分层 Quorum：
+  group.1=1:2:3
+  group.2=4:5:6
+  group.3=7:8:9
+所有 weight.N 均未配置（默认为 1）。
+(1) 根据 QuorumHierarchical#containsQuorum 的逻辑，判断以下集合是否构成 quorum，并写出计算过程（注意整型除法）：
+    A = {1, 2, 4, 5}
+    B = {1, 2, 3, 4, 7}
+    C = {1, 4, 7, 2, 5}
+(2) 如果把 weight.7=0、weight.8=0、weight.9=0，computeGroupWeight 会对 numGroups 做什么调整？这时 B 的结论是否会变化？
+(3) 由此说明：分层 Quorum 下"存活机器数多"一定比"存活机器数少"更容易形成 quorum 吗？
+提示：docs/zookeeperHierarchicalQuorums.html 可对照阅读。
+
+【我的答案】
+
+
+
+--------------------------------------------------
+
+第 10 题 [设计思考] ★★★
+QuorumCnxManager 的设计中有几处"看起来不严谨"的取舍：
+- toSend 中当发送队列满（remainingCapacity()==0）时直接 bq.take() 丢弃最旧消息；
+- 每对 server 之间只保留一条 TCP 连接，由 sid 大小决定方向；
+- SendWorker 启动时无条件重发 lastMessageSent 中的最后一条消息。
+请分析：
+(1) 为什么在选举场景下"丢旧消息"是可以接受的？如果换成 Leader-Follower 之间的 PROPOSAL/COMMIT 同步通道，还能这样做吗？
+(2) 重发最后一条消息解决了什么问题？会不会导致对端收到重复选票，FastLeaderElection 能否容忍？
+(3) toSend 里 "containsKey → put" 两步不是原子的，在什么并发情况下可能出问题？你会如何改进？
+
+【我的答案】
+
+
