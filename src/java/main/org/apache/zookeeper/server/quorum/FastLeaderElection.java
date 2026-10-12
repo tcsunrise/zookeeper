@@ -273,7 +273,8 @@ public class FastLeaderElection implements Election {
                                             response.sid);
                                     sendqueue.offer(notmsg);
                                 }
-                            } else {
+                            }
+                            else {
                                 /*
                                  * If this server is not looking, but the one that sent the ack
                                  * is looking, then send back what it believes to be the leader.
