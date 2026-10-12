@@ -221,6 +221,15 @@ java -cp "build/classes;build/lib/log4j-1.2.15.jar;conf" \
 ```bat
 java -cp "build\classes;build\lib\log4j-1.2.15.jar;conf" ^
      org.apache.zookeeper.server.quorum.QuorumPeerMain conf\zoo.cfg
+
+java -cp "build\classes;build\lib\log4j-1.2.15.jar;conf" org.apache.zookeeper.server.quorum.QuorumPeerMain conf\zoo.cfg
+```
+
+```bat
+java -cp "build\classes;build\lib\log4j-1.2.15.jar;conf" org.apache.zookeeper.server.quorum.QuorumPeerMain conf\quorum\z1.cfg
+java -cp "build\classes;build\lib\log4j-1.2.15.jar;conf" org.apache.zookeeper.server.quorum.QuorumPeerMain conf\quorum\z2.cfg
+java -cp "build\classes;build\lib\log4j-1.2.15.jar;conf" org.apache.zookeeper.server.quorum.QuorumPeerMain conf\quorum\z3.cfg
+java -cp "build\classes;build\lib\log4j-1.2.15.jar;conf" org.apache.zookeeper.server.quorum.QuorumPeerMain conf\quorum\z4.cfg
 ```
 
 **PowerShell：**（`` ` `` 是续行符）

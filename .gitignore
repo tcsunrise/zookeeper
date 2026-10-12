@@ -15,3 +15,6 @@ ide-lib/
 out/
 
 version-2
+temp/**
+!temp/**/
+!temp/**/myid
