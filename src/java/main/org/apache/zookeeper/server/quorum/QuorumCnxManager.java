@@ -162,6 +162,7 @@ public class QuorumCnxManager {
      */
     public boolean initiateConnection(SocketChannel s, Long sid) {
          try {
+             // 发起方：新连接的前8个字节发送的是自己的sid
             // Sending id and challenge
             byte[] msgBytes = new byte[8];
             ByteBuffer msgBuffer = ByteBuffer.wrap(msgBytes);
@@ -221,14 +222,18 @@ public class QuorumCnxManager {
         Long sid = null;
         
         try {
+            // 接收方 新连接的前8个字节 是对方的sid
             byte[] msgBytes = new byte[8];
             ByteBuffer msgBuffer = ByteBuffer.wrap(msgBytes);
-                
+
+            // 隐患：只 read 了一次，没有循环读满 8 字节（TCP 无消息边界，可能拆包），
+            // 读不足时 sid 会解析错；后续版本改为 DataInputStream.readLong() 读满
             s.read(msgBuffer);
             msgBuffer.position(0);
                 
             // Read server id
             sid = Long.valueOf(msgBuffer.getLong());
+            // 对方是 observer 的时候，收到的是对方的 sid， 不是下面这个OBSERVER_ID
             if(sid == QuorumPeer.OBSERVER_ID){
                 /*
                  * Choose identifier at random. We need a value to identify
@@ -246,6 +251,7 @@ public class QuorumCnxManager {
         }
 
         // 总是 由 sid 大的 去主动连 sid 小的
+        // 连我的是一个小的，关掉这次接收到的连接；我再去连对方
         // If wins the challenge, then close the new connection.
         if (sid < self.getId()) {
             try {
@@ -483,6 +489,7 @@ public class QuorumCnxManager {
                                 + sock.getRemoteSocketAddress());
                     
                         LOG.debug("Connection request: " + self.getId());
+                        // Listener 选举端口收到连接
                         receiveConnection(client);
                         numRetries = 0;
                     }
@@ -601,12 +608,13 @@ public class QuorumCnxManager {
                 throw new IOException("SocketChannel is null");
         }
 
-        @Override
+        @Override // SendWorker
         public void run() {
             threadCnt.incrementAndGet();
             try{
                 ByteBuffer b = lastMessageSent.get(sid); 
-                if(b != null) send(b);   
+                if(b != null)
+                    send(b);
             } catch (IOException e) {
                 LOG.error("Failed to send last message. Shutting down thread.", e);
                 this.finish();
@@ -678,7 +686,7 @@ public class QuorumCnxManager {
             return running;
         }
 
-        @Override
+        @Override // RecvWorker
         public void run() {
             threadCnt.incrementAndGet();
             try {
