@@ -40,6 +40,8 @@ import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
 import org.apache.zookeeper.server.quorum.flexible.QuorumMaj;
 import org.apache.zookeeper.server.quorum.flexible.QuorumVerifier;
 
+import javax.annotation.concurrent.GuardedBy;
+
 /**
  * This class manages the quorum protocol. There are three states this server
  * can be in:
@@ -112,9 +114,10 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
             this.electionAddr = electionAddr;
             this.type = type;
         }
-        
-        public InetSocketAddress addr;
 
+        // zab 端口
+        public InetSocketAddress addr;
+        // 选举端口
         public InetSocketAddress electionAddr;
         
         public long id;
@@ -197,6 +200,7 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
     /**
      * This is who I think the leader currently is.
      */
+    @GuardedBy("this")
     volatile private Vote currentVote;
     public synchronized Vote getCurrentVote(){
         return currentVote;
@@ -318,6 +322,7 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
         }
     }
 
+    @GuardedBy("this")
     private ServerState state = ServerState.LOOKING;
 
     public synchronized void setPeerState(ServerState newState){
@@ -390,14 +395,18 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
     
     @Override
     public synchronized void start() {
+        // (1) 重写start方法，执行一些准备操作
         try {
             zkDb.loadDataBase();
         } catch(IOException ie) {
             LOG.fatal("Unable to load database on disk", ie);
             throw new RuntimeException("Unable to run quorum server ", ie);
         }
-        cnxnFactory.start();        
+        // (2) 启动客户端服务
+        cnxnFactory.start();
+        // (3) 启动选举
         startLeaderElection();
+        // (4) 启动线程
         super.start();
     }
 
@@ -407,6 +416,7 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
         responder.running = false;
         responder.interrupt();
     }
+
     synchronized public void startLeaderElection() {
         currentVote = new Vote(myid, getLastLoggedZxid());
         for (QuorumServer p : getView().values()) {

@@ -33,6 +33,8 @@ import org.apache.zookeeper.server.quorum.QuorumPeer.LearnerType;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.quorum.QuorumPeer.ServerState;
 
+import javax.annotation.concurrent.GuardedBy;
+
 
 /**
  * Implementation of leader election using TCP. It uses an object of the class
@@ -396,8 +398,13 @@ public class FastLeaderElection implements Election {
 
     QuorumPeer self;
     Messenger messenger;
+
+    // 这三个一组 this=FastLeaderElection实例
+    @GuardedBy("this")
     volatile long logicalclock; /* Election instance */
+    @GuardedBy("this")
     long proposedLeader;
+    @GuardedBy("this")
     long proposedZxid;
 
 
@@ -565,9 +572,11 @@ public class FastLeaderElection implements Election {
          * from leader stating that it is leading, then predicate is false.
          */
 
-        if(leader != self.getId()){
-            if(votes.get(leader) == null) predicate = false;
-            else if(votes.get(leader).state != ServerState.LEADING) predicate = false;
+        if(leader != self.getId()) {
+            if(votes.get(leader) == null)
+                predicate = false;
+            else if(votes.get(leader).state != ServerState.LEADING)
+                predicate = false;
         }
 
         return predicate;
@@ -650,12 +659,13 @@ public class FastLeaderElection implements Election {
             }
 
             LOG.info("New election. My id =  " + self.getId() + ", Proposed zxid = " + proposedZxid);
-            sendNotifications();
+            sendNotifications(); // 异步把 nofi 发出去
 
             /*
              * Loop in which we exchange notifications until we find a leader
              */
-
+            // 交换 nofi ，直至确定 leader
+            // 只要还是 Looking 而且 没有 stop
             while ((self.getPeerState() == ServerState.LOOKING) && (!stop)){
                 /*
                  * Remove next notification from queue, times out after 2 times
@@ -665,7 +675,6 @@ public class FastLeaderElection implements Election {
 
                 /*
                  * Sends more notifications if haven't received enough.
-                 * Otherwise processes new notification.
                  */
                 if (n == null) {
                     if (manager.haveDelivered()) {
@@ -674,13 +683,14 @@ public class FastLeaderElection implements Election {
                         manager.connectAll();
                     }
                     /*
-                     * Exponential backoff
+                     * Exponential backoff 指数退避
                      */
                     int tmpTimeOut = notTimeout * 2;
                     notTimeout = (tmpTimeOut < maxNotificationInterval ? tmpTimeOut : maxNotificationInterval);
                     LOG.info("Notification time out: " + notTimeout);
                 }
-                else{
+                // Otherwise processes new notification.
+                else {
                     switch (n.state) {
                     case LOOKING:
                         // If notification > current, replace and send messages out
@@ -718,48 +728,37 @@ public class FastLeaderElection implements Election {
                          * Only proceed if the vote comes from a replica in the
                          * voting view.
                          */
-                        if(self.getVotingView().containsKey(n.sid)){
+                        if(self.getVotingView().containsKey(n.sid)) {
                             recvset.put(n.sid, new Vote(n.leader, n.zxid, n.epoch));
 
-                            //If have received from all nodes, then terminate
-                            if ((self.getVotingView().size() == recvset.size()) &&
-                                    (self.getQuorumVerifier().getWeight(proposedLeader) != 0)){
-                                self.setPeerState((proposedLeader == self.getId()) ?
-                                        ServerState.LEADING: learningState());
+                            // If have received from all nodes, then terminate
+                            if ((self.getVotingView().size() == recvset.size())
+                                    && (self.getQuorumVerifier().getWeight(proposedLeader) != 0)) {
+                                self.setPeerState((proposedLeader == self.getId()) ? ServerState.LEADING: learningState());
                                 leaveInstance();
                                 return new Vote(proposedLeader, proposedZxid);
-
-                            } else if (termPredicate(recvset,
-                                    new Vote(proposedLeader, proposedZxid,
-                                            logicalclock))) {
-
+                            } else if (termPredicate(recvset, new Vote(proposedLeader, proposedZxid, logicalclock))) {
                                 // Verify if there is any change in the proposed leader
-                                while((n = recvqueue.poll(finalizeWait,
-                                        TimeUnit.MILLISECONDS)) != null){
-                                    if(totalOrderPredicate(n.leader, n.zxid,
-                                            proposedLeader, proposedZxid)){
+                                while ((n = recvqueue.poll(finalizeWait, TimeUnit.MILLISECONDS)) != null) {
+                                    if (totalOrderPredicate(n.leader, n.zxid, proposedLeader, proposedZxid)) {
                                         recvqueue.put(n);
                                         break;
                                     }
                                 }
-
                                 /*
                                  * This predicate is true once we don't read any new
                                  * relevant message from the reception queue
                                  */
                                 if (n == null) {
-                                    self.setPeerState((proposedLeader == self.getId()) ?
-                                            ServerState.LEADING: learningState());
+                                    self.setPeerState((proposedLeader == self.getId()) ? ServerState.LEADING: learningState());
                                     if(LOG.isDebugEnabled()){
                                         LOG.debug("About to leave FLE instance: Leader= "
                                             + proposedLeader + ", Zxid = " +
                                             proposedZxid + ", My id = " + self.getId()
                                             + ", My state = " + self.getPeerState());
                                     }
-
                                     leaveInstance();
-                                    return new Vote(proposedLeader,
-                                            proposedZxid);
+                                    return new Vote(proposedLeader, proposedZxid);
                                 }
                             }
                         }
@@ -776,30 +775,25 @@ public class FastLeaderElection implements Election {
                          * this leader, then processes will naturally move
                          * to a new epoch.
                          */
-                        if(n.epoch == logicalclock){
+                        if(n.epoch == logicalclock) {
                             recvset.put(n.sid, new Vote(n.leader, n.zxid, n.epoch));
-                            if((n.state == ServerState.LEADING) ||
-                                    (termPredicate(recvset, new Vote(n.leader,
-                                            n.zxid, n.epoch, n.state))
-                                            && checkLeader(outofelection, n.leader, n.epoch)) ){
-                                self.setPeerState((n.leader == self.getId()) ?
-                                        ServerState.LEADING: learningState());
-
+                            if (    (n.state == ServerState.LEADING)
+                                    ||
+                                    (termPredicate(recvset, new Vote(n.leader, n.zxid, n.epoch, n.state)) && checkLeader(outofelection, n.leader, n.epoch))
+                            ) {
+                                self.setPeerState((n.leader == self.getId()) ? ServerState.LEADING: learningState());
                                 leaveInstance();
                                 return new Vote(n.leader, n.zxid);
                             }
                         }
 
-                        outofelection.put(n.sid, new Vote(n.leader, n.zxid,
-                                n.epoch, n.state));
+                        outofelection.put(n.sid, new Vote(n.leader, n.zxid, n.epoch, n.state));
 
-                        if (termPredicate(outofelection, new Vote(n.leader,
-                                n.zxid, n.epoch, n.state))
+                        if (termPredicate(outofelection, new Vote(n.leader, n.zxid, n.epoch, n.state))
                                 && checkLeader(outofelection, n.leader, n.epoch)) {
                             synchronized(this){
                                 logicalclock = n.epoch;
-                                self.setPeerState((n.leader == self.getId()) ?
-                                        ServerState.LEADING: learningState());
+                                self.setPeerState((n.leader == self.getId()) ? ServerState.LEADING: learningState());
                             }
                             leaveInstance();
                             return new Vote(n.leader, n.zxid);
