@@ -471,6 +471,7 @@ public class QuorumCnxManager {
          */
         @Override
         public void run() {
+            setName("QuorumCnxManager.Listener of sid = " + self.getId());
             int numRetries = 0;
             while((!shutdown) && (numRetries < 3)){
                 try {
@@ -541,6 +542,7 @@ public class QuorumCnxManager {
          * @param sid   Server identifier
          */
         SendWorker(SocketChannel channel, Long sid) {
+            super("QuorumCnxManager.SendWorker for sid = " + sid);
             this.sid = sid;
             this.channel = channel;
             recvWorker = null;
@@ -662,6 +664,7 @@ public class QuorumCnxManager {
         final SendWorker sw;
 
         RecvWorker(SocketChannel channel, Long sid, SendWorker sw) {
+            super("QuorumCnxManager.RecvWorker for sid = " + sid);
             this.sid = sid;
             this.channel = channel;
             this.sw = sw;
@@ -732,7 +735,7 @@ public class QuorumCnxManager {
                 }
             } catch (Exception e) {
                 LOG.warn("Connection broken for id " + sid + ", my id = " + 
-                        self.getId() + ", error = " + e);
+                        self.getId() + ", error = " + e, e);
             } finally {
                 LOG.warn("Interrupting SendWorker");
                 sw.finish();

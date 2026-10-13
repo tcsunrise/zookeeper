@@ -376,12 +376,12 @@ public class FastLeaderElection implements Election {
          */
         Messenger(QuorumCnxManager manager) {
             this.ws = new WorkerSender(manager);
-            Thread t = new Thread(this.ws, "WorkerSender Thread");
+            Thread t = new Thread(this.ws, "FastLeaderElection.Messenger.WorkerSender Thread");
             t.setDaemon(true);
             t.start();
 
             this.wr = new WorkerReceiver(manager);
-            t = new Thread(this.wr, "WorkerReceiver Thread");
+            t = new Thread(this.wr, "FastLeaderElection.Messenger.WorkerReceiver Thread");
             t.setDaemon(true);
             t.start();
         }
@@ -636,6 +636,7 @@ public class FastLeaderElection implements Election {
      * changes its state to LOOKING, this method is invoked, and it
      * sends notifications to all other peers.
      */
+    @Override
     public Vote lookForLeader() throws InterruptedException {
         try {
             self.jmxLeaderElectionBean = new LeaderElectionBean();
@@ -697,21 +698,20 @@ public class FastLeaderElection implements Election {
                         if (n.epoch > logicalclock) {
                             logicalclock = n.epoch;
                             recvset.clear();
-                            if(totalOrderPredicate(n.leader, n.zxid,
-                                    getInitId(), getInitLastLoggedZxid()))
+                            if(totalOrderPredicate(n.leader, n.zxid, getInitId(), getInitLastLoggedZxid()))
                                 updateProposal(n.leader, n.zxid);
                             else
-                                updateProposal(getInitId(),
-                                        getInitLastLoggedZxid());
+                                updateProposal(getInitId(), getInitLastLoggedZxid());
                             sendNotifications();
-                        } else if (n.epoch < logicalclock) {
+                        }
+                        else if (n.epoch < logicalclock) {
                             if(LOG.isDebugEnabled()){
                                 LOG.debug("Notification epoch is smaller than logicalclock. n.epoch = " + n.epoch
                                         + ", Logical clock" + logicalclock);
                             }
                             break;
-                        } else if (totalOrderPredicate(n.leader, n.zxid,
-                                proposedLeader, proposedZxid)) {
+                        }
+                        else if (totalOrderPredicate(n.leader, n.zxid, proposedLeader, proposedZxid)) {
                             LOG.info("Updating proposal");
                             updateProposal(n.leader, n.zxid);
                             sendNotifications();
