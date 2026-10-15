@@ -177,16 +177,15 @@ public class QuorumCnxManager {
         // If lost the challenge, then drop the new connection
         if (sid > self.getId()) {
             try {
-                LOG.info("Have smaller server identifier, so dropping the connection: (" + 
-                        sid + ", " + self.getId() + ")");
+                LOG.info("I have smaller server identifier, so dropping the connection: (" + sid + ", " + self.getId() + ")");
                 s.socket().close();
             } catch (IOException e) {
-                LOG.warn("Ignoring exception when closing socket or trying to "
-                        + "reopen connection: ", e);
+                LOG.warn("Ignoring exception when closing socket or trying to " + "reopen connection: ", e);
             }
         }
         // Otherwise proceed with the connection
         else {
+            LOG.debug("SocketChannel "+ self.getId() + " to " + sid + " established: " + s);
             SendWorker sw = new SendWorker(s, sid);
             RecvWorker rw = new RecvWorker(s, sid, sw);
             sw.setRecv(rw);
@@ -701,7 +700,7 @@ public class QuorumCnxManager {
                      * message
                      */
                     while (msgLength.hasRemaining()) {
-                        if (channel.read(msgLength) < 0) {
+                        if (channel.read(msgLength) < 0) { // -1
                             throw new IOException("Channel eof");
                         }
                     }
@@ -735,7 +734,7 @@ public class QuorumCnxManager {
                 }
             } catch (Exception e) {
                 LOG.warn("Connection broken for id " + sid + ", my id = " + 
-                        self.getId() + ", error = " + e, e);
+                        self.getId() + ", channel = " + channel + ", error = " + e, e);
             } finally {
                 LOG.warn("Interrupting SendWorker");
                 sw.finish();

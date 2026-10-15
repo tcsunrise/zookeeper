@@ -204,7 +204,10 @@ public class FastLeaderElection implements Election {
                                     logicalclock,
                                     self.getPeerState(),
                                     response.sid);
-
+                            LOG.debug("Send Notification: " + notmsg.leader + " (notmsg.leader), " + notmsg.zxid +
+                                    " (notmsg.zxid), " + notmsg.epoch + " (notmsg.round), " + notmsg.state +
+                                    " (notmsg.state), " + notmsg.sid + " (notmsg.sid), " + self.getPeerState() +
+                                    " (my state)");
                             sendqueue.offer(notmsg);
                         } else {
                             // Receive new message
@@ -273,6 +276,10 @@ public class FastLeaderElection implements Election {
                                             logicalclock,
                                             self.getPeerState(),
                                             response.sid);
+                                    LOG.debug("Send Notification: " + notmsg.leader + " (notmsg.leader), " + notmsg.zxid +
+                                            " (notmsg.zxid), " + notmsg.epoch + " (notmsg.round), " + notmsg.state +
+                                            " (notmsg.state), " + notmsg.sid + " (notmsg.sid), " + self.getPeerState() +
+                                            " (my state)");
                                     sendqueue.offer(notmsg);
                                 }
                             }
@@ -295,6 +302,10 @@ public class FastLeaderElection implements Election {
                                             logicalclock,
                                             self.getPeerState(),
                                             response.sid);
+                                    LOG.debug("Send Notification: " + notmsg.leader + " (notmsg.leader), " + notmsg.zxid +
+                                            " (notmsg.zxid), " + notmsg.epoch + " (notmsg.round), " + notmsg.state +
+                                            " (notmsg.state), " + notmsg.sid + " (notmsg.sid), " + self.getPeerState() +
+                                            " (my state)");
                                     sendqueue.offer(notmsg);
                                 }
                             }
@@ -376,12 +387,12 @@ public class FastLeaderElection implements Election {
          */
         Messenger(QuorumCnxManager manager) {
             this.ws = new WorkerSender(manager);
-            Thread t = new Thread(this.ws, "FastLeaderElection.Messenger.WorkerSender Thread");
+            Thread t = new Thread(this.ws, "FastLeaderElection.Messenger.WorkerSender");
             t.setDaemon(true);
             t.start();
 
             this.wr = new WorkerReceiver(manager);
-            t = new Thread(this.wr, "FastLeaderElection.Messenger.WorkerReceiver Thread");
+            t = new Thread(this.wr, "FastLeaderElection.Messenger.WorkerReceiver");
             t.setDaemon(true);
             t.start();
         }
@@ -483,13 +494,17 @@ public class FastLeaderElection implements Election {
                     QuorumPeer.ServerState.LOOKING,
                     sid);
 
+            LOG.debug("Send Notification: " + notmsg.leader + " (notmsg.leader), " + notmsg.zxid +
+                    " (notmsg.zxid), " + notmsg.epoch + " (notmsg.round), " + notmsg.state +
+                    " (notmsg.state), " + notmsg.sid + " (notmsg.sid), " + self.getPeerState() +
+                    " (my state)");
             sendqueue.offer(notmsg);
         }
     }
 
 
     private void printNotification(Notification n){
-        LOG.info("Notification: " + n.leader + " (n.leader), " + n.zxid +
+        LOG.info("Receive Notification: " + n.leader + " (n.leader), " + n.zxid +
                 " (n.zxid), " + n.epoch + " (n.round), " + n.state +
                 " (n.state), " + n.sid + " (n.sid), " + self.getPeerState() +
                 " (my state)");
@@ -503,7 +518,7 @@ public class FastLeaderElection implements Election {
      * @param zxid  Last zxid observed by the issuer of this vote
      */
     private boolean totalOrderPredicate(long newId, long newZxid, long curId, long curZxid) {
-        LOG.debug("id: " + newId + ", proposed id: " + curId + ", zxid: " + newZxid + ", proposed zxid: " + curZxid);
+        LOG.debug("totalOrderPredicate id: " + newId + ", proposed id: " + curId + ", zxid: " + newZxid + ", proposed zxid: " + curZxid);
         if(self.getQuorumVerifier().getWeight(newId) == 0){
             return false;
         }
@@ -540,11 +555,14 @@ public class FastLeaderElection implements Election {
             }
         }
 
-        if(self.getQuorumVerifier().containsQuorum(set))
-            return true;
+        boolean result;
+        if (self.getQuorumVerifier().containsQuorum(set))
+            result = true;
         else
-            return false;
+            result = false;
 
+        LOG.debug("termPredicate votes=" + votes + ", vote=" + vote + ", set=" + set+", result="+result);
+        return result;
     }
 
     /**
@@ -736,8 +754,10 @@ public class FastLeaderElection implements Election {
                                     && (self.getQuorumVerifier().getWeight(proposedLeader) != 0)) {
                                 self.setPeerState((proposedLeader == self.getId()) ? ServerState.LEADING: learningState());
                                 leaveInstance();
+                                LOG.debug("leaveInstance!");
                                 return new Vote(proposedLeader, proposedZxid);
                             } else if (termPredicate(recvset, new Vote(proposedLeader, proposedZxid, logicalclock))) {
+                                LOG.debug("termPredicate in self.getVotingView().containsKey(n.sid)");
                                 // Verify if there is any change in the proposed leader
                                 while ((n = recvqueue.poll(finalizeWait, TimeUnit.MILLISECONDS)) != null) {
                                     if (totalOrderPredicate(n.leader, n.zxid, proposedLeader, proposedZxid)) {
@@ -758,6 +778,7 @@ public class FastLeaderElection implements Election {
                                             + ", My state = " + self.getPeerState());
                                     }
                                     leaveInstance();
+                                    LOG.debug("leaveInstance!");
                                     return new Vote(proposedLeader, proposedZxid);
                                 }
                             }
@@ -783,6 +804,7 @@ public class FastLeaderElection implements Election {
                             ) {
                                 self.setPeerState((n.leader == self.getId()) ? ServerState.LEADING: learningState());
                                 leaveInstance();
+                                LOG.debug("leaveInstance!");
                                 return new Vote(n.leader, n.zxid);
                             }
                         }
@@ -796,6 +818,7 @@ public class FastLeaderElection implements Election {
                                 self.setPeerState((n.leader == self.getId()) ? ServerState.LEADING: learningState());
                             }
                             leaveInstance();
+                            LOG.debug("leaveInstance!");
                             return new Vote(n.leader, n.zxid);
                         }
 
