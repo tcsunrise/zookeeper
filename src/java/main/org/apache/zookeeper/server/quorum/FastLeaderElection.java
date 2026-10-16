@@ -690,8 +690,9 @@ public class FastLeaderElection implements Election {
                  * Remove next notification from queue, times out after 2 times
                  * the termination time
                  */
+                LOG.debug("keep looking..");
                 Notification n = recvqueue.poll(notTimeout, TimeUnit.MILLISECONDS);
-
+                LOG.debug("recvqueue poll -> " + n + ", remaining size = " + recvqueue.size());
                 /*
                  * Sends more notifications if haven't received enough.
                  */

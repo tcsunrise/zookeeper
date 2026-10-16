@@ -109,25 +109,35 @@ public class CnxManagerTest extends TestCase {
             failed = false;
         }
         
-        public void run(){
+        public void run() {
             try {
+                // peer 0
                 QuorumPeer peer = new QuorumPeer(peers, peerTmpdir[0], peerTmpdir[0], peerClientPort[0], 3, 0, 1000, 2, 2);
+                // peer 0 的 cnx
                 QuorumCnxManager cnxManager = new QuorumCnxManager(peer);
+                // 启动 listener
                 QuorumCnxManager.Listener listener = cnxManager.listener;
                 if(listener != null){
                     listener.start();
                 } else {
                     LOG.error("Null listener when initializing cnx manager");
                 }
-                
+
+                // 向 1发送消息并等待
                 long sid = 1;
                 cnxManager.toSend(sid, createMsg(ServerState.LOOKING.ordinal(), 0, -1, 1));
-                
+
+                // 等待回复的消息
                 Message m = null;
                 int numRetries = 1;
                 while((m == null) && (numRetries++ <= THRESHOLD)){
                     m = cnxManager.recvQueue.poll(3000, TimeUnit.MILLISECONDS);
-                    if(m == null) cnxManager.connectAll();
+                    if(m == null) {
+                        cnxManager.connectAll();
+                    }
+                    else {
+                        LOG.info("M!");
+                    }
                 }
                 
                 if(numRetries > THRESHOLD){
@@ -152,7 +162,6 @@ public class CnxManagerTest extends TestCase {
     @Test
     public void testCnxManager() throws Exception {
         CnxManagerThread thread = new CnxManagerThread();
-        
         thread.start();
         
         QuorumPeer peer = new QuorumPeer(peers, peerTmpdir[1], peerTmpdir[1], peerClientPort[1], 3, 1, 1000, 2, 2);
@@ -170,7 +179,12 @@ public class CnxManagerTest extends TestCase {
         int numRetries = 1;
         while((m == null) && (numRetries++ <= THRESHOLD)){
             m = cnxManager.recvQueue.poll(3000, TimeUnit.MILLISECONDS);
-            if(m == null) cnxManager.connectAll();
+            if(m == null) {
+                cnxManager.connectAll();
+            }
+            else {
+                LOG.info("m!");
+            }
         }
         
         assertTrue("Exceeded number of retries", numRetries <= THRESHOLD);

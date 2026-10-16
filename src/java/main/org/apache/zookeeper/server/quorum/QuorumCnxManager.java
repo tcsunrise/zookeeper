@@ -185,13 +185,12 @@ public class QuorumCnxManager {
         }
         // Otherwise proceed with the connection
         else {
-            LOG.debug("SocketChannel "+ self.getId() + " to " + sid + " established: " + s);
+            LOG.debug("initiateConnection SocketChannel "+ self.getId() + " to " + sid + " established: " + s);
             SendWorker sw = new SendWorker(s, sid);
             RecvWorker rw = new RecvWorker(s, sid, sw);
             sw.setRecv(rw);
 
             SendWorker vsw = senderWorkerMap.get(sid);
-            
             if(vsw != null)
                 vsw.finish();
             
@@ -203,8 +202,7 @@ public class QuorumCnxManager {
             
             sw.start();
             rw.start();
-            
-            return true;    
+            return true;
             
         }
         return false;
@@ -277,33 +275,40 @@ public class QuorumCnxManager {
         }
         // Otherwise start worker threads to receive data.
         else {
+            LOG.debug("receiveConnection SocketChannel "+ self.getId() + " to " + sid + " established: " + s);
             SendWorker sw = new SendWorker(s, sid);
             RecvWorker rw = new RecvWorker(s, sid, sw);
             sw.setRecv(rw);
 
             SendWorker vsw = senderWorkerMap.get(sid);
-            
             if(vsw != null)
                 vsw.finish();
-            
+
             senderWorkerMap.put(sid, sw);
-            
             if (!queueSendMap.containsKey(sid)) {
                 queueSendMap.put(sid, new ArrayBlockingQueue<ByteBuffer>(
                         CAPACITY));
             }
-            
+
             sw.start();
             rw.start();
-            
-            return true;    
+            return true;
         }
         return false;
     }
 
     /**
-     * Processes invoke this message to queue a message to send. Currently, 
+     * Processes invoke this message to queue a message to send. Currently,
      * only leader election uses it.
+     *
+     * 调用方是 FastLeaderElection 的 WorkerSender 单线程，按 sendqueue 顺序逐条调用：
+     * - sid == 自己：直接回环放入 recvQueue，立即返回，不走网络；
+     * - sid != 自己：放入该 sid 的发送队列后，每次都会调用 connectOne(sid)。
+     *
+     * 隐患：若对端未启动/不可达，connectOne 内同步 connect 会阻塞 WorkerSender
+     * （Windows 上连 localhost 未监听端口约 2s 才 refused，不可达地址最长 cnxTO），
+     * 期间 sendqueue 中排在后面的所有消息（包括发给自己的回环投票）都被延迟。
+     * 现象：日志里本机已重发多轮 Send Notification，却迟迟看不到 "Adding vote: From = 自己"。
      */
     public void toSend(Long sid, ByteBuffer b) {
         /*
@@ -325,8 +330,7 @@ public class QuorumCnxManager {
                  * Start a new connection if doesn't have one already.
                  */
                 if (!queueSendMap.containsKey(sid)) {
-                    ArrayBlockingQueue<ByteBuffer> bq = new ArrayBlockingQueue<ByteBuffer>(
-                            CAPACITY);
+                    ArrayBlockingQueue<ByteBuffer> bq = new ArrayBlockingQueue<ByteBuffer>(CAPACITY);
                     queueSendMap.put(sid, bq);
                     bq.put(b);
 
@@ -340,29 +344,34 @@ public class QuorumCnxManager {
                     } else {
                         LOG.error("No queue for server " + sid);
                     }
-                } 
-                
+                }
+
+                LOG.debug("toSend queueSendMap to " + sid + " has " + queueSendMap.get(sid).size());
                 connectOne(sid);
                 
             } catch (InterruptedException e) {
-                LOG.warn("Interrupted while waiting to put message in queue.",
-                        e);
+                LOG.warn("Interrupted while waiting to put message in queue.", e);
             } 
     }
     
     /**
      * Try to establish a connection to server with id sid.
-     * 
+     *
+     * 注意：建连是同步阻塞的（socket.connect，超时 cnxTO），且方法为 synchronized，
+     * 调用线程（toSend 场景下即 WorkerSender、connectAll 场景下即 QuorumPeer 线程）
+     * 会被卡住直到连接成功或失败；对未启动的 sid，每发一条消息都会重新尝试一次。
+     * 耗时见下方 "Connect to server ... took N ms" 日志。
+     *
      *  @param sid  server id
      */
     
     synchronized void connectOne(long sid){
+        LOG.info("connect to sid = " + sid);
         if (senderWorkerMap.get(sid) == null){
             InetSocketAddress electionAddr;
-            if(self.quorumPeers.containsKey(sid))
-                electionAddr =
-                    self.quorumPeers.get(sid).electionAddr;
-            else{
+            if (self.quorumPeers.containsKey(sid))
+                electionAddr = self.quorumPeers.get(sid).electionAddr;
+            else {
                 LOG.warn("Invalid server id: " + sid);
                 return;
             }
@@ -373,7 +382,14 @@ public class QuorumCnxManager {
                 }
                 
                 channel = SocketChannel.open();
-                channel.socket().connect(self.getView().get(sid).electionAddr, cnxTO);                
+                long connectStart = System.currentTimeMillis();
+                try {
+                    channel.socket().connect(self.getView().get(sid).electionAddr, cnxTO);
+                } finally {
+                    LOG.info("Connect to server " + sid + " at election address "
+                            + electionAddr + " took "
+                            + (System.currentTimeMillis() - connectStart) + " ms");
+                }
                 channel.socket().setTcpNoDelay(true);
                 initiateConnection(channel, sid);
             } catch (UnresolvedAddressException e) {
@@ -470,7 +486,7 @@ public class QuorumCnxManager {
          */
         @Override
         public void run() {
-            setName("QuorumCnxManager.Listener of sid = " + self.getId());
+            setName("QuorumCnxManager.Listener(" + self.getId()+")");
             int numRetries = 0;
             while((!shutdown) && (numRetries < 3)){
                 try {
@@ -485,10 +501,8 @@ public class QuorumCnxManager {
                         Socket sock = client.socket();
                         sock.setTcpNoDelay(true);
                     
-                        LOG.debug("Connection request "
-                                + sock.getRemoteSocketAddress());
-                    
-                        LOG.debug("Connection request: " + self.getId());
+                        LOG.debug("Connection request from " + sock.getRemoteSocketAddress());
+                        LOG.debug("Get connection request at sid : " + self.getId());
                         // Listener 选举端口收到连接
                         receiveConnection(client);
                         numRetries = 0;
@@ -541,12 +555,12 @@ public class QuorumCnxManager {
          * @param sid   Server identifier
          */
         SendWorker(SocketChannel channel, Long sid) {
-            super("QuorumCnxManager.SendWorker for sid = " + sid);
+            super("QuorumCnxManager.SendWorker(" + sid+")");
             this.sid = sid;
             this.channel = channel;
             recvWorker = null;
             
-            LOG.debug("Address of remote peer: " + this.sid);
+            LOG.debug("Construct one new SendWorker, address of remote peer: " + this.sid);
         }
 
         synchronized void setRecv(RecvWorker recvWorker) {
@@ -663,7 +677,7 @@ public class QuorumCnxManager {
         final SendWorker sw;
 
         RecvWorker(SocketChannel channel, Long sid, SendWorker sw) {
-            super("QuorumCnxManager.RecvWorker for sid = " + sid);
+            super("QuorumCnxManager.RecvWorker(" + sid+")");
             this.sid = sid;
             this.channel = channel;
             this.sw = sw;
