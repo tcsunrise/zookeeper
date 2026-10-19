@@ -486,7 +486,15 @@ public class QuorumCnxManager {
      * MDC 按线程存储，需在线程 run() 开头调用。
      */
     private static void putObjMdc(Object obj) {
-        MDC.put("obj", "#" + Integer.toHexString(System.identityHashCode(obj)));
+        MDC.put("obj", objHash(obj));
+    }
+
+    /**
+     * 与 MDC 中 obj 同格式的对象标识，用于在其他线程中执行的方法（构造函数、finish 等）
+     * 日志里标出目标对象。
+     */
+    private static String objHash(Object obj) {
+        return "#" + Integer.toHexString(System.identityHashCode(obj));
     }
 
     /**
@@ -574,7 +582,7 @@ public class QuorumCnxManager {
             this.channel = channel;
             recvWorker = null;
             
-            LOG.debug("Construct one new SendWorker, address of remote peer: " + this.sid);
+            LOG.debug("Construct one new SendWorker" + objHash(this) + ", address of remote peer: " + this.sid);
         }
 
         synchronized void setRecv(RecvWorker recvWorker) {
@@ -592,7 +600,7 @@ public class QuorumCnxManager {
                 
         synchronized boolean finish() {
             if(LOG.isDebugEnabled()){
-                LOG.debug("Calling finish");
+                LOG.debug("Calling finish on SendWorker" + objHash(this) + " sid=" + sid);
             }
             
             if(!running){
