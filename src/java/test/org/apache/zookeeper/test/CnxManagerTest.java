@@ -133,6 +133,7 @@ public class CnxManagerTest extends TestCase {
                 while((m == null) && (numRetries++ <= THRESHOLD)){
                     m = cnxManager.recvQueue.poll(3000, TimeUnit.MILLISECONDS);
                     if(m == null) {
+                        LOG.info("M is empty! , cnxManager.connectAll();");
                         cnxManager.connectAll();
                     }
                     else {
@@ -180,6 +181,7 @@ public class CnxManagerTest extends TestCase {
         while((m == null) && (numRetries++ <= THRESHOLD)){
             m = cnxManager.recvQueue.poll(3000, TimeUnit.MILLISECONDS);
             if(m == null) {
+                LOG.info("M is empty! , cnxManager.connectAll();");
                 cnxManager.connectAll();
             }
             else {

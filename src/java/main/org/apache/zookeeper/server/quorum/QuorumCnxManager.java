@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Date;
 
 import org.apache.log4j.Logger;
+import org.apache.log4j.MDC;
 
 /**
  * This class implements a connection manager for leader election using TCP. It
@@ -262,9 +263,11 @@ public class QuorumCnxManager {
                     sw.finish();
                 
                 /*
-                 * Now we start a new connection
+                 * Now we start a new connection.
+                 * 因为发起方已经将自己发起的连接关闭了，所以我们也得关闭；
+                 * 然后由我们主动发起一个连接。
                  */
-                LOG.debug("Create new connection to server: " + sid);
+                LOG.debug("Create new connection Back to server: " + sid);
                 s.socket().close();
                 connectOne(sid);
                 
@@ -334,7 +337,8 @@ public class QuorumCnxManager {
                     queueSendMap.put(sid, bq);
                     bq.put(b);
 
-                } else {
+                }
+                else {
                     ArrayBlockingQueue<ByteBuffer> bq = queueSendMap.get(sid);
                     if(bq != null){
                         if (bq.remainingCapacity() == 0) {
@@ -406,7 +410,8 @@ public class QuorumCnxManager {
                         + " at election address " + electionAddr,
                         e);
             }
-        } else {
+        }
+        else {
             LOG.debug("There is a connection already for server " + sid);
         }
     }
@@ -476,6 +481,15 @@ public class QuorumCnxManager {
     }
 
     /**
+     * 把线程对象的 identityHashCode 放入 MDC，log4j pattern 中用 %X{obj} 输出，
+     * 便于区分同一 sid 的多个 SendWorker/RecvWorker 实例。
+     * MDC 按线程存储，需在线程 run() 开头调用。
+     */
+    private static void putObjMdc(Object obj) {
+        MDC.put("obj", "#" + Integer.toHexString(System.identityHashCode(obj)));
+    }
+
+    /**
      * Thread to listen on some port
      */
     public class Listener extends Thread {
@@ -487,6 +501,7 @@ public class QuorumCnxManager {
         @Override
         public void run() {
             setName("QuorumCnxManager.Listener(" + self.getId()+")");
+            putObjMdc(this);
             int numRetries = 0;
             while((!shutdown) && (numRetries < 3)){
                 try {
@@ -501,8 +516,7 @@ public class QuorumCnxManager {
                         Socket sock = client.socket();
                         sock.setTcpNoDelay(true);
                     
-                        LOG.debug("Connection request from " + sock.getRemoteSocketAddress());
-                        LOG.debug("Get connection request at sid : " + self.getId());
+                        LOG.debug("Connection request from " + sock.getRemoteSocketAddress() + ", myid=" + self.getId());
                         // Listener 选举端口收到连接
                         receiveConnection(client);
                         numRetries = 0;
@@ -625,6 +639,7 @@ public class QuorumCnxManager {
 
         @Override // SendWorker
         public void run() {
+            putObjMdc(this);
             threadCnt.incrementAndGet();
             try{
                 ByteBuffer b = lastMessageSent.get(sid); 
@@ -704,6 +719,7 @@ public class QuorumCnxManager {
 
         @Override // RecvWorker
         public void run() {
+            putObjMdc(this);
             threadCnt.incrementAndGet();
             try {
                 byte[] size = new byte[4];
