@@ -1,0 +1,170 @@
+// 初始化并分配端口
+2026-10-20 10:34:42,647 - INFO  [main:PortAssignment@31] - assigning port 11221
+2026-10-20 10:34:42,649 - INFO  [main:PortAssignment@31] - assigning port 11222
+2026-10-20 10:34:42,650 - INFO  [main:PortAssignment@31] - assigning port 11223
+2026-10-20 10:34:42,740 - INFO  [main:PortAssignment@31] - assigning port 11224
+2026-10-20 10:34:42,740 - INFO  [main:PortAssignment@31] - assigning port 11225
+2026-10-20 10:34:42,741 - INFO  [main:PortAssignment@31] - assigning port 11226
+2026-10-20 10:34:42,741 - INFO  [main:PortAssignment@31] - assigning port 11227
+2026-10-20 10:34:42,742 - INFO  [main:PortAssignment@31] - assigning port 11228
+2026-10-20 10:34:42,742 - INFO  [main:PortAssignment@31] - assigning port 11229
+
+// NIOServerCnxn$Factory 绑定
+2026-10-20 10:34:42,759 - INFO  [main:NIOServerCnxn$Factory@148] - binding to port 0.0.0.0/0.0.0.0:11225
+2026-10-20 10:34:42,759 - INFO  [Thread-0:NIOServerCnxn$Factory@148] - binding to port 0.0.0.0/0.0.0.0:11222
+
+
+// Thread-0: sid=0; ---  S0
+// main线程: sid=1; ---  S1
+
+
+// s0 s1 分别：将消息放进队列，启动监听端口
+2026-10-20 10:34:42,774 - DEBUG [main:QuorumCnxManager@355] - toSend queueSendMap to 0 has 1
+2026-10-20 10:34:42,774 - INFO  [QuorumCnxManager.Listener(1):QuorumCnxManager$Listener@520#5918652e] - My election bind port: 11226
+2026-10-20 10:34:42,774 - INFO  [QuorumCnxManager.Listener(0):QuorumCnxManager$Listener@520#58cb289] - My election bind port: 11223
+2026-10-20 10:34:42,774 - DEBUG [Thread-0:QuorumCnxManager@355] - toSend queueSendMap to 1 has 1
+
+// s0 s1 同时调用connectOne
+2026-10-20 10:34:42,774 - INFO  [main:QuorumCnxManager@375] - connect to sid = 0
+2026-10-20 10:34:42,775 - INFO  [Thread-0:QuorumCnxManager@375] - connect to sid = 1
+2026-10-20 10:34:42,775 - DEBUG [main:QuorumCnxManager@387] - Opening channel to server 0
+2026-10-20 10:34:42,775 - DEBUG [Thread-0:QuorumCnxManager@387] - Opening channel to server 1
+
+// s0 s1 的 Listener同时收到对方tcp请求
+2026-10-20 10:34:42,781 - DEBUG [QuorumCnxManager.Listener(0):QuorumCnxManager$Listener@529#58cb289] - Connection request from /169.254.228.203:51107, myid=0
+2026-10-20 10:34:42,781 - DEBUG [QuorumCnxManager.Listener(1):QuorumCnxManager$Listener@529#5918652e] - Connection request from /169.254.228.203:51108, myid=1
+
+// s0 s1 双方 connectOne 显示建立成功 
+2026-10-20 10:34:42,781 - INFO  [main:QuorumCnxManager@395] - Connect to server 0 at election address 0.0.0.0/0.0.0.0:11223 took 6 ms
+2026-10-20 10:34:42,781 - INFO  [Thread-0:QuorumCnxManager@395] - Connect to server 1 at election address 0.0.0.0/0.0.0.0:11226 took 6 ms
+
+s0->s1 : tcp(x1)
+s1->s0 : tcp(y1)
+
+// s0 建立 SendWorker from tcp(y1)
+2026-10-20 10:34:42,781 - DEBUG [QuorumCnxManager.Listener(0):QuorumCnxManager@282#58cb289] - receiveConnection SocketChannel 0 to 1 established: java.nio.channels.SocketChannel[connected local=/169.254.228.203:11223 remote=/169.254.228.203:51107]
+
+// s1 收到 s0 发起的tcp, 丢掉 tcp(x1), 重新发起 s1->s0, tcp(y2)
+2026-10-20 10:34:42,781 - DEBUG [QuorumCnxManager.Listener(1):QuorumCnxManager@271#5918652e] - Create new connection Back to server: 0
+// s0 丢掉 tcp(x1)
+2026-10-20 10:34:42,781 - INFO  [Thread-0:QuorumCnxManager@181] - I have smaller server identifier, so dropping the connection: (1, 0)
+
+// s1 建立 SendWorker, tcp(y1)
+2026-10-20 10:34:42,781 - DEBUG [main:QuorumCnxManager@189] - initiateConnection SocketChannel 1 to 0 established: java.nio.channels.SocketChannel[connected local=/169.254.228.203:51107 remote=0.0.0.0/0.0.0.0:11223]
+
+// s0 s1 依据 tcp(y1) 各自建立 SendWorker
+// 注意：第 48 行 s1 Listener 处理 x1 时 get(0) 返回 null（前后没有 "Calling finish on SendWorker"），
+// 因为 main 线程到这里才构造 SendWorker#51c8530f 并 put 进 map。
+// 即 "Listener 先处理 x1、main 后 put y1"，侥幸落在安全的一侧；
+// 若顺序反过来，刚放进 map 的 y1 会被 finish 掉（误杀健康连接）。
+2026-10-20 10:34:42,781 - DEBUG [QuorumCnxManager.Listener(0):QuorumCnxManager$SendWorker@587#58cb289] - Construct one new SendWorker#7bf68d4b, address of remote peer: 1
+2026-10-20 10:34:42,781 - DEBUG [main:QuorumCnxManager$SendWorker@587] - Construct one new SendWorker#51c8530f, address of remote peer: 0
+
+
+
+// s1 Listener 调 connectOne(0)（synchronized，要等 main 线程的 connectOne 退出才拿到锁）
+2026-10-20 10:34:42,783 - INFO  [QuorumCnxManager.Listener(1):QuorumCnxManager@375#5918652e] - connect to sid = 0
+// 发现 map 里已有 y1，直接返回，不再发起 y2（y2 从未建立，所以下一条编号跳到 y3）
+2026-10-20 10:34:42,783 - DEBUG [QuorumCnxManager.Listener(1):QuorumCnxManager@417#5918652e] - There is a connection already for server 0
+
+
+2026-10-20 10:34:42,784 - INFO  [main:CnxManagerTest@188] - m!
+2026-10-20 10:34:42,784 - INFO  [Thread-0:CnxManagerTest$CnxManagerThread@140] - M!
+
+
+
+
+// testInitiateConnection（CnxManagerTest.java:149，s0 故意再主动连一次 s1）
+// 与竞态图 t4 同一条路径：一条比较输了的迟到连接 x2，触发 s1 把健康的 y1 finish 掉，再重建 y3
+// s0 发起 ->s1 tcp(x2)
+2026-10-20 10:34:42,784 - DEBUG [Thread-0:QuorumCnxManager@151] - Opening channel to server 1
+// s1 收到 from s0 , tcp(x2)
+2026-10-20 10:34:42,785 - DEBUG [QuorumCnxManager.Listener(1):QuorumCnxManager$Listener@529#5918652e] - Connection request from /169.254.228.203:51109, myid=1
+// s0 关闭自己 ，等待新连接
+2026-10-20 10:34:42,785 - INFO  [Thread-0:QuorumCnxManager@181] - I have smaller server identifier, so dropping the connection: (1, 0)
+// s1 关闭已有连接 tcp(y1)
+2026-10-20 10:34:42,785 - DEBUG [QuorumCnxManager.Listener(1):QuorumCnxManager$SendWorker@605#5918652e] - Calling finish on SendWorker#51c8530f sid=0 // Listener
+2026-10-20 10:34:42,785 - DEBUG [QuorumCnxManager.Listener(1):QuorumCnxManager$SendWorker@629#5918652e] - Removing entry from senderWorkerMap sid=0
+// s1->s0 tcp(y3)
+2026-10-20 10:34:42,785 - DEBUG [QuorumCnxManager.Listener(1):QuorumCnxManager@271#5918652e] - Create new connection Back to server: 0
+2026-10-20 10:34:42,785 - INFO  [QuorumCnxManager.Listener(1):QuorumCnxManager@375#5918652e] - connect to sid = 0
+2026-10-20 10:34:42,786 - DEBUG [QuorumCnxManager.Listener(1):QuorumCnxManager@387#5918652e] - Opening channel to server 0
+
+// s1 SendWorker Interrupted
+2026-10-20 10:34:42,786 - WARN  [QuorumCnxManager.SendWorker(0):QuorumCnxManager$SendWorker@681#51c8530f] - Interrupted while waiting for message on queue
+java.lang.InterruptedException
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.reportInterruptAfterWait(AbstractQueuedSynchronizer.java:2014)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(AbstractQueuedSynchronizer.java:2088)
+	at java.util.concurrent.ArrayBlockingQueue.poll(ArrayBlockingQueue.java:418)
+	at org.apache.zookeeper.server.quorum.QuorumCnxManager$SendWorker.run(QuorumCnxManager.java:670)
+
+// tcp(y3) ok
+2026-10-20 10:34:42,786 - INFO  [QuorumCnxManager.Listener(1):QuorumCnxManager@395#5918652e] - Connect to server 0 at election address 0.0.0.0/0.0.0.0:11223 took 0 ms
+
+// s0 tcp(y1) RecvWorker
+2026-10-20 10:34:42,786 - WARN  [QuorumCnxManager.RecvWorker(1):QuorumCnxManager$RecvWorker@776#704cd36a] - Connection broken for id 1, my id = 0, channel = java.nio.channels.SocketChannel[connected local=/169.254.228.203:11223 remote=/169.254.228.203:51107], error = java.io.IOException: Channel eof
+java.io.IOException: Channel eof
+	at org.apache.zookeeper.server.quorum.QuorumCnxManager$RecvWorker.run(QuorumCnxManager.java:744)
+// s1 tcp(y1) RecvWorker SendWorker->finish->channel.close->AsynchronousCloseException
+2026-10-20 10:34:42,786 - WARN  [QuorumCnxManager.RecvWorker(0):QuorumCnxManager$RecvWorker@776#33a63cdd] - Connection broken for id 0, my id = 1, channel = java.nio.channels.SocketChannel[closed], error = java.nio.channels.AsynchronousCloseException
+java.nio.channels.AsynchronousCloseException
+	at java.nio.channels.spi.AbstractInterruptibleChannel.end(AbstractInterruptibleChannel.java:205)
+	at sun.nio.ch.SocketChannelImpl.read(SocketChannelImpl.java:405)
+	at org.apache.zookeeper.server.quorum.QuorumCnxManager$RecvWorker.run(QuorumCnxManager.java:743)
+
+// s1 RecvWorker-finally ->SendWorker.finish()
+2026-10-20 10:34:42,787 - WARN  [QuorumCnxManager.RecvWorker(0):QuorumCnxManager$RecvWorker@779#33a63cdd] - Interrupting SendWorker
+
+// s0 interrupt SendWorker
+2026-10-20 10:34:42,787 - WARN  [QuorumCnxManager.RecvWorker(1):QuorumCnxManager$RecvWorker@779#704cd36a] - Interrupting SendWorker
+
+2026-10-20 10:34:42,787 - DEBUG [QuorumCnxManager.Listener(1):QuorumCnxManager@189#5918652e] - initiateConnection SocketChannel 1 to 0 established: java.nio.channels.SocketChannel[connected local=/169.254.228.203:51110 remote=0.0.0.0/0.0.0.0:11223]
+
+// s1 SendWorker.run() 循环退出后直接调 this.finish()（:689，不是 finally），running=false 直接返回 pass!
+// 注：本行时间戳 .786 早于上一行 .787，多线程日志在毫秒级不严格按时间排列，先后以 #hash 和因果为准
+2026-10-20 10:34:42,786 - DEBUG [QuorumCnxManager.SendWorker(0):QuorumCnxManager$SendWorker@605#51c8530f] - Calling finish on SendWorker#51c8530f sid=0 // SendWorker.finally
+
+// s0 收到 tcp(y3)
+2026-10-20 10:34:42,786 - DEBUG [QuorumCnxManager.Listener(0):QuorumCnxManager$Listener@529#58cb289] - Connection request from /169.254.228.203:51110, myid=0
+
+// s1 RecvWorker-finally ->SendWorker.finish() pass! 
+2026-10-20 10:34:42,787 - DEBUG [QuorumCnxManager.RecvWorker(0):QuorumCnxManager$SendWorker@605#33a63cdd] - Calling finish on SendWorker#51c8530f sid=0 // RecvWorker.finally
+
+// // tcp(y1) s1 Send exit
+2026-10-20 10:34:42,787 - WARN  [QuorumCnxManager.SendWorker(0):QuorumCnxManager$SendWorker@690#51c8530f] - Send worker leaving thread 
+
+// s1
+2026-10-20 10:34:42,787 - DEBUG [QuorumCnxManager.Listener(1):QuorumCnxManager$SendWorker@587#5918652e] - Construct one new SendWorker#176d3c16, address of remote peer: 0
+
+// s0 finish tcp(y1) SendWorker
+2026-10-20 10:34:42,787 - DEBUG [QuorumCnxManager.RecvWorker(1):QuorumCnxManager$SendWorker@605#704cd36a] - Calling finish on SendWorker#7bf68d4b sid=1
+
+// s0
+2026-10-20 10:34:42,787 - DEBUG [QuorumCnxManager.Listener(0):QuorumCnxManager@282#58cb289] - receiveConnection SocketChannel 0 to 1 established: java.nio.channels.SocketChannel[connected local=/169.254.228.203:11223 remote=/169.254.228.203:51110]
+
+// s0 tcp(y1) SendWorker
+2026-10-20 10:34:42,788 - WARN  [QuorumCnxManager.SendWorker(1):QuorumCnxManager$SendWorker@681#7bf68d4b] - Interrupted while waiting for message on queue
+java.lang.InterruptedException
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.reportInterruptAfterWait(AbstractQueuedSynchronizer.java:2014)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(AbstractQueuedSynchronizer.java:2088)
+	at java.util.concurrent.ArrayBlockingQueue.poll(ArrayBlockingQueue.java:418)
+	at org.apache.zookeeper.server.quorum.QuorumCnxManager$SendWorker.run(QuorumCnxManager.java:670)
+2026-10-20 10:34:42,788 - DEBUG [QuorumCnxManager.RecvWorker(1):QuorumCnxManager$SendWorker@629#704cd36a] - Removing entry from senderWorkerMap sid=1
+
+// s0
+2026-10-20 10:34:42,788 - DEBUG [QuorumCnxManager.Listener(0):QuorumCnxManager$SendWorker@587#58cb289] - Construct one new SendWorker#4960279d, address of remote peer: 1
+
+// s0 tcp(y1)
+2026-10-20 10:34:42,789 - DEBUG [QuorumCnxManager.SendWorker(1):QuorumCnxManager$SendWorker@605#7bf68d4b] - Calling finish on SendWorker#7bf68d4b sid=1
+2026-10-20 10:34:42,789 - WARN  [QuorumCnxManager.SendWorker(1):QuorumCnxManager$SendWorker@690#7bf68d4b] - Send worker leaving thread
+
+Process finished with exit code 0
+
+
+关闭一个已经建立好的tcp连接，双方都需要关闭2个线程，共4个线程关闭。
+  - s1（主动关闭方）：Listener 调 SendWorker.finish() 关 channel → RecvWorker 报 AsynchronousCloseException
+  - s0（被动方）：RecvWorker 读到 EOF（Channel eof）→ finally 里调 sw.finish()
+  - 同一个 SendWorker 的 finish 会被调用多次（如 #51c8530f：Listener / SendWorker 自身退出 / RecvWorker.finally），
+    只有第一次真正清理，后续因 running=false 直接返回。
+  - s0 侧顺序：旧 SendWorker#7bf68d4b 先 remove(1)，Listener 才构造并 put 新的 SendWorker#4960279d，
+    新 worker 不会被旧 worker 的 remove 误删。
