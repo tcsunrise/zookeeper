@@ -191,11 +191,12 @@ public class QuorumCnxManager {
             RecvWorker rw = new RecvWorker(s, sid, sw);
             sw.setRecv(rw);
 
+            // get -> finish -> put
             SendWorker vsw = senderWorkerMap.get(sid);
             if(vsw != null)
                 vsw.finish();
-            
             senderWorkerMap.put(sid, sw);
+
             if (!queueSendMap.containsKey(sid)) {
                 queueSendMap.put(sid, new ArrayBlockingQueue<ByteBuffer>(
                         CAPACITY));
@@ -283,11 +284,12 @@ public class QuorumCnxManager {
             RecvWorker rw = new RecvWorker(s, sid, sw);
             sw.setRecv(rw);
 
+            // get -> finish -> put
             SendWorker vsw = senderWorkerMap.get(sid);
             if(vsw != null)
                 vsw.finish();
-
             senderWorkerMap.put(sid, sw);
+
             if (!queueSendMap.containsKey(sid)) {
                 queueSendMap.put(sid, new ArrayBlockingQueue<ByteBuffer>(
                         CAPACITY));
@@ -466,7 +468,7 @@ public class QuorumCnxManager {
     	}   	
     }
 
-    /*
+    /**
      * Return number of worker threads
      */
     public long getThreadCount() {
