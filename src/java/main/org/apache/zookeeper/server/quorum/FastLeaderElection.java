@@ -513,21 +513,15 @@ public class FastLeaderElection implements Election {
     /**
      * Check if a pair (server id, zxid) succeeds our
      * current vote.
-     *
-     * @param id    Server identifier
-     * @param zxid  Last zxid observed by the issuer of this vote
      */
     private boolean totalOrderPredicate(long newId, long newZxid, long curId, long curZxid) {
-        LOG.debug("totalOrderPredicate id: " + newId + ", proposed id: " + curId + ", zxid: " + newZxid + ", proposed zxid: " + curZxid);
+        LOG.debug("totalOrderPredicate newId: " + newId + ", proposed id: " + curId + ", newZxid: " + newZxid + ", proposed zxid: " + curZxid);
         if(self.getQuorumVerifier().getWeight(newId) == 0){
             return false;
         }
 
-        if ((newZxid > curZxid)
-                || ((newZxid == curZxid) && (newId > curId)))
-            return true;
-        else
-            return false;
+        return (newZxid > curZxid)
+                || ((newZxid == curZxid) && (newId > curId));
 
     }
 
@@ -673,7 +667,7 @@ public class FastLeaderElection implements Election {
             int notTimeout = finalizeWait;
 
             synchronized (this) {
-                logicalclock++;
+                logicalclock++; // volatile
                 updateProposal(getInitId(), getInitLastLoggedZxid());
             }
 
@@ -685,7 +679,7 @@ public class FastLeaderElection implements Election {
              */
             // 交换 nofi ，直至确定 leader
             // 只要还是 Looking 而且 没有 stop
-            while ((self.getPeerState() == ServerState.LOOKING) && (!stop)){
+            while ((self.getPeerState() == ServerState.LOOKING) && (!stop)) {
                 /*
                  * Remove next notification from queue, times out after 2 times
                  * the termination time
@@ -757,7 +751,8 @@ public class FastLeaderElection implements Election {
                                 leaveInstance();
                                 LOG.debug("leaveInstance!");
                                 return new Vote(proposedLeader, proposedZxid);
-                            } else if (termPredicate(recvset, new Vote(proposedLeader, proposedZxid, logicalclock))) {
+                            }
+                            else if (termPredicate(recvset, new Vote(proposedLeader, proposedZxid, logicalclock))) {
                                 LOG.debug("termPredicate in self.getVotingView().containsKey(n.sid)");
                                 // Verify if there is any change in the proposed leader
                                 while ((n = recvqueue.poll(finalizeWait, TimeUnit.MILLISECONDS)) != null) {
