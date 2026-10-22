@@ -44,6 +44,8 @@ import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.RequestProcessor;
 import org.apache.zookeeper.server.quorum.QuorumPeer.LearnerType;
 
+import javax.annotation.concurrent.GuardedBy;
+
 /**
  * This class has the control logic for the Leader.
  */
@@ -174,7 +176,7 @@ public class Leader {
 
     /**
      * This message type is sent by the leader to indicate that the follower is
-     * now uptodate andt can start responding to clients.
+     * now up to date, and it can start responding to clients.
      */
     final static int UPTODATE = 12;
 
@@ -201,7 +203,7 @@ public class Leader {
     final static int COMMIT = 4;
 
     /**
-     * This message type is enchanged between follower and leader (initiated by
+     * This message type is exchanged between follower and leader (initiated by
      * follower) to determine liveliness.
      */
     final static int PING = 5;
@@ -228,7 +230,7 @@ public class Leader {
 
     Proposal newLeaderProposal = new Proposal();
     
-    class LearnerCnxAcceptor extends Thread{
+    class LearnerCnxAcceptor extends Thread {
         private volatile boolean stop = false;
         
         @Override
@@ -277,25 +279,24 @@ public class Leader {
         zk.registerJMX(new LeaderBean(this, zk), self.jmxLocalPeerBean);
 
         try {
+            // 每次lead() 置为0
             self.tick = 0;
             zk.loadData();
             
             long epoch = self.getLastLoggedZxid() >> 32L;
             epoch++;
             zk.setZxid(epoch << 32L);
-            
-            synchronized(this){
+
+            synchronized (this) {
                 lastProposed = zk.getZxid();
             }
             
-            newLeaderProposal.packet = new QuorumPacket(NEWLEADER, zk.getZxid(),
-                    null, null);
-
-
+            newLeaderProposal.packet = new QuorumPacket(NEWLEADER, zk.getZxid(), null, null);
             if ((newLeaderProposal.packet.getZxid() & 0xffffffffL) != 0) {
                 LOG.info("NEWLEADER proposal has Zxid of "
                         + Long.toHexString(newLeaderProposal.packet.getZxid()));
             }
+
             outstandingProposals.put(newLeaderProposal.packet.getZxid(), newLeaderProposal);
             
             // Start thread that waits for connection requests from 
@@ -307,7 +308,8 @@ public class Leader {
             // us. We do this by waiting for the NEWLEADER packet to get
             // acknowledged
             newLeaderProposal.ackSet.add(self.getId());
-            while (!self.getQuorumVerifier().containsQuorum(newLeaderProposal.ackSet)){
+
+            while (!self.getQuorumVerifier().containsQuorum(newLeaderProposal.ackSet)) {
             //while (newLeaderProposal.ackCount <= self.quorumPeers.size() / 2) {
                 if (self.tick > self.initLimit) {
                     // Followers aren't syncing fast enough,
@@ -315,8 +317,8 @@ public class Leader {
                     StringBuilder ackToString = new StringBuilder();
                     for(Long id : newLeaderProposal.ackSet)
                         ackToString.append(id + ": ");
-                    
                     shutdown("Waiting for a quorum of followers, only synced with: " + ackToString);
+
                     HashSet<Long> followerSet = new HashSet<Long>();
                     for(LearnerHandler f : learners)
                         followerSet.add(f.getSid());
@@ -328,6 +330,7 @@ public class Leader {
                     }
                     return;
                 }
+
                 Thread.sleep(self.tickTime);
                 self.tick++;
             }
@@ -363,7 +366,8 @@ public class Leader {
             // We ping twice a tick, so we only update the tick every other
             // iteration
             boolean tickSkip = true;
-    
+
+            // loop
             while (true) {
                 Thread.sleep(self.tickTime / 2);
                 if (!tickSkip) {
@@ -383,19 +387,22 @@ public class Leader {
                         f.ping();
                     }
                 }
-              if (!tickSkip && !self.getQuorumVerifier().containsQuorum(syncedSet)) {
-                //if (!tickSkip && syncedCount < self.quorumPeers.size() / 2) {
+                if (!tickSkip && !self.getQuorumVerifier().containsQuorum(syncedSet)) {
+                    //if (!tickSkip && syncedCount < self.quorumPeers.size() / 2) {
                     // Lost quorum, shutdown
-                  // TODO: message is wrong unless majority quorums used
+                    // TODO: message is wrong unless majority quorums used
                     shutdown("Only " + syncedSet.size() + " followers, need "
                             + (self.getVotingView().size() / 2));
                     // make sure the order is the same!
                     // the leader goes to looking
                     return;
-              } 
-              tickSkip = !tickSkip;
+                }
+
+                tickSkip = !tickSkip;
             }
-        } finally {
+
+        }
+        finally {
             zk.unregisterJMX(this);
         }
     }
@@ -468,6 +475,7 @@ public class Leader {
             }
             return;
         }
+
         if (lastCommitted >= zxid) {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("proposal has already been committed, pzxid:"
@@ -477,6 +485,7 @@ public class Leader {
             // The proposal has already been committed
             return;
         }
+
         Proposal p = outstandingProposals.get(zxid);
         if (p == null) {
             LOG.warn("Trying to commit future proposal: zxid 0x"
@@ -485,11 +494,13 @@ public class Leader {
         }
         
         p.ackSet.add(sid);
+
         if (LOG.isDebugEnabled()) {
             LOG.debug("Count for zxid: 0x" + Long.toHexString(zxid)
                     + " is " + p.ackSet.size());
         }
-        if (self.getQuorumVerifier().containsQuorum(p.ackSet)){             
+
+        if (self.getQuorumVerifier().containsQuorum(p.ackSet)) {
             if (zxid != lastCommitted+1) {
                 LOG.warn("Commiting zxid 0x" + Long.toHexString(zxid)
                         + " from " + followerAddr + " not first!");
@@ -514,7 +525,8 @@ public class Leader {
                     }
                 }
                 return;
-            } else {
+            }
+            else {
                 lastCommitted = zxid;
                 if(LOG.isInfoEnabled()){
                     LOG.info("Have quorum of supporters; starting up and setting last processed zxid: " + zk.getZxid());
@@ -629,6 +641,8 @@ public class Leader {
         sendObserverPacket(qp);
     }
 
+    // zxid
+    @GuardedBy("this")
     long lastProposed;
 
     

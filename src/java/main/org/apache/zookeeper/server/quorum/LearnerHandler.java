@@ -67,8 +67,8 @@ public class LearnerHandler extends Thread {
      * ZooKeeper server identifier of this learner
      */
     protected long sid = 0;
-    
-    long getSid(){
+
+    long getSid() {
         return sid;
     }                    
 
@@ -322,7 +322,8 @@ public class LearnerHandler extends Thread {
                                 queuePacket(qcommit);
                             }
                         }
-                    } else if (peerLastZxid > maxCommittedLog) {
+                    }
+                    else if (peerLastZxid > maxCommittedLog) {
                         packetToSend = Leader.TRUNC;
                         zxidToSend = maxCommittedLog;
                         updates = zxidToSend;
@@ -337,12 +338,12 @@ public class LearnerHandler extends Thread {
                     packetToSend = Leader.DIFF;
                     zxidToSend = leaderLastZxid;
                 }
-            } finally {
+            }
+            finally {
                 rl.unlock();
             }
 
-            QuorumPacket newLeaderQP = new QuorumPacket(Leader.NEWLEADER,
-                    leaderLastZxid, null, null);
+            QuorumPacket newLeaderQP = new QuorumPacket(Leader.NEWLEADER, leaderLastZxid, null, null);
             oa.writeRecord(newLeaderQP, "packet");
             bufferedOutput.flush();
             //Need to set the zxidToSend to the latest zxid
@@ -370,8 +371,7 @@ public class LearnerHandler extends Thread {
             // so we need to mark when the peer can actually start
             // using the data
             //
-            queuedPackets
-                    .add(new QuorumPacket(Leader.UPTODATE, -1, null, null));
+            queuedPackets.add(new QuorumPacket(Leader.UPTODATE, -1, null, null));
 
             // Start sending packets
             new Thread() {
@@ -395,7 +395,7 @@ public class LearnerHandler extends Thread {
             ia.readRecord(qp, "packet");
             if(qp.getType() != Leader.ACK){
                 LOG.error("Next packet was supposed to be an ACK");
-                return;
+                return; //
             }
             leader.processAck(this.sid, qp.getZxid(), sock.getLocalSocketAddress());
             
@@ -405,8 +405,8 @@ public class LearnerHandler extends Thread {
             /*
              * Wait until leader starts up
              */
-            synchronized(leader.zk){
-                while(!leader.zk.isRunning()){
+            synchronized (leader.zk) {
+                while (!leader.zk.isRunning()) {
                     leader.zk.wait(500);
                 }
             }
@@ -497,7 +497,8 @@ public class LearnerHandler extends Thread {
                 default:
                 }
             }
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             if (sock != null && !sock.isClosed()) {
                 LOG.error("Unexpected exception causing shutdown while sock "
                         + "still open", e);
@@ -509,9 +510,11 @@ public class LearnerHandler extends Thread {
             		// do nothing
             	}
             }
-        } catch (InterruptedException e) {
+        }
+        catch (InterruptedException e) {
             LOG.error("Unexpected exception causing shutdown", e);
-        } finally {
+        }
+        finally {
             LOG.warn("******* GOODBYE " 
                     + (sock != null ? sock.getRemoteSocketAddress() : "<null>")
                     + " ********");
@@ -549,8 +552,7 @@ public class LearnerHandler extends Thread {
         synchronized(leader) {
             id = leader.lastProposed;
         }
-        QuorumPacket ping = new QuorumPacket(Leader.PING, id,
-                null, null);
+        QuorumPacket ping = new QuorumPacket(Leader.PING, id, null, null);
         queuePacket(ping);
     }
 
