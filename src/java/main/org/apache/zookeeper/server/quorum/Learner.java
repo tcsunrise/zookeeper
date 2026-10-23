@@ -45,6 +45,8 @@ import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
 import org.apache.zookeeper.server.util.SerializeUtils;
 import org.apache.zookeeper.txn.TxnHeader;
 
+import javax.annotation.concurrent.GuardedBy;
+
 /**
  * This class is the superclass of two of the three main actors in a ZK
  * ensemble: Followers and Observers. Both Followers and Observers share 
@@ -69,9 +71,11 @@ public class Learner {
     public Socket getSocket() {
         return sock;
     }
-    
+
+    @GuardedBy("self")
     protected InputArchive leaderIs;
-    protected OutputArchive leaderOs;    
+    @GuardedBy("self")
+    protected OutputArchive leaderOs;
     
     protected static final Logger LOG = Logger.getLogger(Learner.class);
 
@@ -233,8 +237,7 @@ public class Learner {
             }
             Thread.sleep(1000);
         }
-        leaderIs = BinaryInputArchive.getArchive(new BufferedInputStream(
-                sock.getInputStream()));
+        leaderIs = BinaryInputArchive.getArchive(new BufferedInputStream(sock.getInputStream()));
         bufferedOutput = new BufferedOutputStream(sock.getOutputStream());
         leaderOs = BinaryOutputArchive.getArchive(bufferedOutput);
     }   
@@ -262,8 +265,10 @@ public class Learner {
         DataOutputStream dsid = new DataOutputStream(bsid);
         dsid.writeLong(self.getId());
         qp.setData(bsid.toByteArray());
-        
+
+        // 发一个
         writePacket(qp, true);
+        // 等回复
         readPacket(qp);        
 
         if (qp.getType() != Leader.NEWLEADER) {
@@ -275,7 +280,7 @@ public class Learner {
     } 
     
     /**
-     * Finally, synchronize our history with the Leader. 
+     * Finally, synchronize our history with the Leader. And startup zks
      * @param newLeaderZxid
      * @throws IOException
      * @throws InterruptedException
@@ -370,6 +375,7 @@ public class Learner {
                 }
             }
         }
+
         ack.setZxid(newLeaderZxid & ~0xffffffffL);
         writePacket(ack, true);
         sock.setSoTimeout(self.tickTime * self.syncLimit);

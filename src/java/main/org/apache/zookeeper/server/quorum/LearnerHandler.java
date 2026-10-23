@@ -227,18 +227,18 @@ public class LearnerHandler extends Thread {
     public void run() {
         try {
             
-            ia = BinaryInputArchive.getArchive(new BufferedInputStream(sock
-                    .getInputStream()));
+            ia = BinaryInputArchive.getArchive(new BufferedInputStream(sock.getInputStream()));
             bufferedOutput = new BufferedOutputStream(sock.getOutputStream());
             oa = BinaryOutputArchive.getArchive(bufferedOutput);
 
             QuorumPacket qp = new QuorumPacket();
-            ia.readRecord(qp, "packet");
-            if(qp.getType() != Leader.FOLLOWERINFO && qp.getType() != Leader.OBSERVERINFO){
-            	LOG.error("First packet " + qp.toString()
-                        + " is not FOLLOWERINFO or OBSERVERINFO!");
+            ia.readRecord(qp, "packet"); // 第1个
+            if(qp.getType() != Leader.FOLLOWERINFO
+                    && qp.getType() != Leader.OBSERVERINFO) {
+            	LOG.error("First packet " + qp.toString() + " is not FOLLOWERINFO or OBSERVERINFO!");
                 return;
             }
+
             if (qp.getData() != null) {
             	ByteBuffer bbsid = ByteBuffer.wrap(qp.getData());
                 this.sid = bbsid.getLong();
@@ -328,7 +328,8 @@ public class LearnerHandler extends Thread {
                         zxidToSend = maxCommittedLog;
                         updates = zxidToSend;
                     }
-                } else {
+                }
+                else {
                     // just let the state transfer happen
                 }               
 
@@ -392,7 +393,7 @@ public class LearnerHandler extends Thread {
              * start processing messages.
              */
             qp = new QuorumPacket();
-            ia.readRecord(qp, "packet");
+            ia.readRecord(qp, "packet"); // 第2个
             if(qp.getType() != Leader.ACK){
                 LOG.error("Next packet was supposed to be an ACK");
                 return; //
@@ -411,9 +412,12 @@ public class LearnerHandler extends Thread {
                 }
             }
 
+            /*
+             * loop for packets
+             */
             while (true) {
                 qp = new QuorumPacket();
-                ia.readRecord(qp, "packet");
+                ia.readRecord(qp, "packet"); // 后续
 
                 long traceMask = ZooTrace.SERVER_PACKET_TRACE_MASK;
                 if (qp.getType() == Leader.PING) {
@@ -486,7 +490,7 @@ public class LearnerHandler extends Thread {
                     type = bb.getInt();
                     bb = bb.slice();
                     Request si;
-                    if(type == OpCode.sync){
+                    if(type == OpCode.sync) {
                         si = new LearnerSyncRequest(this, sessionId, cxid, type, bb, qp.getAuthinfo());
                     } else {
                         si = new Request(null, sessionId, cxid, type, bb, qp.getAuthinfo());
@@ -521,7 +525,8 @@ public class LearnerHandler extends Thread {
             // Send the packet of death
             try {
                 queuedPackets.put(proposalOfDeath);
-            } catch (InterruptedException e) {
+            }
+            catch (InterruptedException e) {
                 LOG.warn("Ignoring unexpected exception", e);
             }
             shutdown();

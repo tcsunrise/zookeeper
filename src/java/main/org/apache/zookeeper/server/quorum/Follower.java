@@ -75,9 +75,11 @@ public class Follower extends Learner{
                 syncWithLeader(newLeaderZxid);                
                 QuorumPacket qp = new QuorumPacket();
                 while (self.isRunning()) {
+                    // read one ,
                     readPacket(qp);
-                    processPacket(qp);                   
-                }                              
+                    // process one
+                    processPacket(qp);
+                }
             } catch (IOException e) {
                 LOG.warn("Exception when following the leader", e);
                 try {
@@ -109,8 +111,7 @@ public class Follower extends Learner{
             break;
         case Leader.PROPOSAL:            
             TxnHeader hdr = new TxnHeader();
-            BinaryInputArchive ia = BinaryInputArchive
-            .getArchive(new ByteArrayInputStream(qp.getData()));
+            BinaryInputArchive ia = BinaryInputArchive.getArchive(new ByteArrayInputStream(qp.getData()));
             Record txn = SerializeUtils.deserializeTxn(ia, hdr);
             if (hdr.getZxid() != lastQueued + 1) {
                 LOG.warn("Got zxid 0x"

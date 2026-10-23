@@ -564,7 +564,8 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         Request si = new Request(cnxn, sessionId, xid, type, bb, authInfo);
         submitRequest(si);
     }
-    
+
+    // client cnxn request
     public void submitRequest(Request si) {
         if (firstProcessor == null) {
             synchronized (this) {

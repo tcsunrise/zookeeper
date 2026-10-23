@@ -26,6 +26,8 @@ import org.apache.zookeeper.ZooDefs.OpCode;
 import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.RequestProcessor;
 
+import javax.annotation.concurrent.GuardedBy;
+
 /**
  * This RequestProcessor matches the incoming committed requests with the
  * locally submitted requests. The trick is that locally submitted requests that
@@ -38,14 +40,17 @@ public class CommitProcessor extends Thread implements RequestProcessor {
     /**
      * Requests that we are holding until the commit comes in.
      */
+    @GuardedBy("this")
     LinkedList<Request> queuedRequests = new LinkedList<Request>();
 
     /**
      * Requests that have been committed.
      */
+    @GuardedBy("this")
     LinkedList<Request> committedRequests = new LinkedList<Request>();
 
     RequestProcessor nextProcessor;
+    // read Request
     ArrayList<Request> toProcess = new ArrayList<Request>();
 
     /**
@@ -53,6 +58,7 @@ public class CommitProcessor extends Thread implements RequestProcessor {
      * leader or we just let the sync operation flow through like a read. The flag will
      * be true if the CommitProcessor is in a Leader pipeline.
      */
+    // true if Leader
     boolean matchSyncs;
 
     public CommitProcessor(RequestProcessor nextProcessor, String id, boolean matchSyncs) {
@@ -66,16 +72,19 @@ public class CommitProcessor extends Thread implements RequestProcessor {
     @Override
     public void run() {
         try {
+            // queuedRequests.remove() -> nextPending
             Request nextPending = null;            
             while (!finished) {
+
                 int len = toProcess.size();
                 for (int i = 0; i < len; i++) {
                     nextProcessor.processRequest(toProcess.get(i));
                 }
                 toProcess.clear();
+
                 synchronized (this) {
-                    if ((queuedRequests.size() == 0 || nextPending != null)
-                            && committedRequests.size() == 0) {
+                    if ((queuedRequests.size() == 0
+                            || nextPending != null) && committedRequests.size() == 0) {
                         wait();
                         continue;
                     }
@@ -139,6 +148,7 @@ public class CommitProcessor extends Thread implements RequestProcessor {
                         }
                     }
                 }
+
             }
         } catch (InterruptedException e) {
             LOG.warn("Interrupted exception while waiting", e);
@@ -148,6 +158,7 @@ public class CommitProcessor extends Thread implements RequestProcessor {
         LOG.info("CommitProcessor exited loop!");
     }
 
+    // leader commit -> committedRequests
     synchronized public void commit(Request request) {
         if (!finished) {
             if (request == null) {
@@ -163,6 +174,7 @@ public class CommitProcessor extends Thread implements RequestProcessor {
         }
     }
 
+    // process request client  -> queuedRequests
     synchronized public void processRequest(Request request) {
         // request.addRQRec(">commit");
         if (LOG.isDebugEnabled()) {

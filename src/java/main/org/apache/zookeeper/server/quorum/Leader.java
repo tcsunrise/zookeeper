@@ -615,6 +615,7 @@ public class Leader {
         }
     }
 
+    // zxid
     long lastCommitted = -1;
 
     /**
