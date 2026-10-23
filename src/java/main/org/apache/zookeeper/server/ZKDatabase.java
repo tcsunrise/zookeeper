@@ -49,6 +49,8 @@ import org.apache.zookeeper.server.quorum.QuorumPacket;
 import org.apache.zookeeper.server.util.SerializeUtils;
 import org.apache.zookeeper.txn.TxnHeader;
 
+import javax.annotation.concurrent.GuardedBy;
+
 /**
  * This class maintains the in memory database of zookeeper
  * server states that includes the sessions, datatree and the
@@ -66,9 +68,18 @@ public class ZKDatabase {
     protected DataTree dataTree;
     protected ConcurrentHashMap<Long, Integer> sessionsWithTimeouts;
     protected FileTxnSnapLog snapLog;
-    protected long minCommittedLog, maxCommittedLog;
+
+    @GuardedBy("logLock")
+    protected long minCommittedLog, maxCommittedLog; // zxid
     public static final int commitLogCount = 500;
+    @Deprecated
     protected static int commitLogBuffer = 700;
+    /**
+     * Used for fast follower synchronization.
+     *
+     * @see #addCommittedProposal
+     */
+    @GuardedBy("logLock")
     protected LinkedList<Proposal> committedLog = new LinkedList<Proposal>();
     protected ReentrantReadWriteLock logLock = new ReentrantReadWriteLock();
     volatile private boolean initialized = false;
@@ -208,9 +219,9 @@ public class ZKDatabase {
      * @throws IOException
      */
     public long loadDataBase() throws IOException {
-        PlayBackListener listener=new PlayBackListener(){
-            public void onTxnLoaded(TxnHeader hdr,Record txn){
-                Request r = new Request(null, 0, hdr.getCxid(),hdr.getType(),
+        PlayBackListener listener = new PlayBackListener() {
+            public void onTxnLoaded(TxnHeader hdr, Record txn) {
+                Request r = new Request(null, 0, hdr.getCxid(), hdr.getType(),
                         null, null);
                 r.txn = txn;
                 r.hdr = hdr;
@@ -218,8 +229,8 @@ public class ZKDatabase {
                 addCommittedProposal(r);
             }
         };
-        
-        long zxid = snapLog.restore(dataTree,sessionsWithTimeouts,listener);
+
+        long zxid = snapLog.restore(dataTree, sessionsWithTimeouts, listener);
         initialized = true;
         return zxid;
     }
@@ -231,6 +242,7 @@ public class ZKDatabase {
      * @param request committed request
      */
     public void addCommittedProposal(Request request) {
+        // used in FinalRequestProcessor
         WriteLock wl = logLock.writeLock();
         try {
             wl.lock();
@@ -254,6 +266,7 @@ public class ZKDatabase {
             } catch (IOException e) {
                 LOG.error("This really should be impossible", e);
             }
+
             QuorumPacket pp = new QuorumPacket(Leader.PROPOSAL, request.zxid,
                     baos.toByteArray(), null);
             Proposal p = new Proposal();

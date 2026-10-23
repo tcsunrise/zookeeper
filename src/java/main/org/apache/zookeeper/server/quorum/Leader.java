@@ -57,6 +57,9 @@ public class Leader {
         LOG.info("TCP NoDelay set to: " + nodelay);
     }
 
+    /**
+     * Leader发起的提议，提议包括发送给集群的packet和客户端的请求request
+     */
     static public class Proposal {
         public QuorumPacket packet;
 
@@ -748,8 +751,8 @@ public class Leader {
      * @param handler handler of the follower
      * @return last proposed zxid
      */
-    synchronized public long startForwarding(LearnerHandler handler,
-            long lastSeenZxid) {
+    synchronized public long startForwarding(LearnerHandler handler, long lastSeenZxid) {
+
         // Queue up any outstanding requests enabling the receipt of
         // new requests
         if (lastProposed > lastSeenZxid) {
@@ -760,11 +763,10 @@ public class Leader {
                 handler.queuePacket(p.packet);
                 // Since the proposal has been committed we need to send the
                 // commit message also
-                QuorumPacket qp = new QuorumPacket(Leader.COMMIT, p.packet
-                        .getZxid(), null, null);
+                QuorumPacket qp = new QuorumPacket(Leader.COMMIT, p.packet.getZxid(), null, null);
                 handler.queuePacket(qp);
             }
-            List<Long>zxids = new ArrayList<Long>(outstandingProposals.keySet());
+            List<Long> zxids = new ArrayList<Long>(outstandingProposals.keySet());
             Collections.sort(zxids);
             for (Long zxid: zxids) {
                 if (zxid <= lastSeenZxid) {
@@ -773,6 +775,7 @@ public class Leader {
                 handler.queuePacket(outstandingProposals.get(zxid).packet);
             }
         }
+
         if (handler.getLearnerType() == LearnerType.PARTICIPANT) {
             synchronized (forwardingFollowers) {
                 forwardingFollowers.add(handler);
