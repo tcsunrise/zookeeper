@@ -251,7 +251,7 @@ public class LearnerHandler extends Thread {
                         
             if (qp.getType() == Leader.OBSERVERINFO) {
                   learnerType = LearnerType.OBSERVER;
-            }            
+            }
             
             long peerLastZxid = qp.getZxid();
             /* the default to send to the follower */
@@ -350,10 +350,12 @@ public class LearnerHandler extends Thread {
                 rl.unlock();
             }
 
-            // 发第1个
+            // 发第1个, learner在等这个
+            // org.apache.zookeeper.server.quorum.Learner.registerWithLeader
             QuorumPacket newLeaderQP = new QuorumPacket(Leader.NEWLEADER, leaderLastZxid, null, null);
             oa.writeRecord(newLeaderQP, "packet");
             bufferedOutput.flush();
+
             // 发第2个
             // Need to set the zxidToSend to the latest zxid
             if (packetToSend == Leader.SNAP) {
@@ -361,6 +363,7 @@ public class LearnerHandler extends Thread {
             }
             oa.writeRecord(new QuorumPacket(packetToSend, zxidToSend, null, null), "packet");
             bufferedOutput.flush();
+
             // 发第3个
             /* if we are not truncating or sending a diff just send a snapshot */
             if (packetToSend == Leader.SNAP) {
@@ -443,7 +446,7 @@ public class LearnerHandler extends Thread {
                 int type;
 
                 switch (qp.getType()) {
-                case Leader.ACK:
+                case Leader.ACK: // 处理ack
                     if (this.learnerType == LearnerType.OBSERVER) {
                         if (LOG.isDebugEnabled()) {
                             LOG.debug("Received ACK from Observer  " + this.sid);
@@ -451,7 +454,7 @@ public class LearnerHandler extends Thread {
                     }
                     leader.processAck(this.sid, qp.getZxid(), sock.getLocalSocketAddress());
                     break;
-                case Leader.PING:
+                case Leader.PING: // 处理ping
                     // Process the touches
                     ByteArrayInputStream bis = new ByteArrayInputStream(qp.getData());
                     DataInputStream dis = new DataInputStream(bis);
@@ -461,7 +464,7 @@ public class LearnerHandler extends Thread {
                         leader.zk.touch(sess, to);
                     }
                     break;
-                case Leader.REVALIDATE:
+                case Leader.REVALIDATE: // 处理会话
                     bis = new ByteArrayInputStream(qp.getData());
                     dis = new DataInputStream(bis);
                     long id = dis.readLong();
@@ -490,7 +493,7 @@ public class LearnerHandler extends Thread {
                     qp.setData(bos.toByteArray());
                     queuedPackets.add(qp);
                     break;
-                case Leader.REQUEST:                    
+                case Leader.REQUEST: // 处理 learner 转发的写请求
                     bb = ByteBuffer.wrap(qp.getData());
                     sessionId = bb.getLong();
                     cxid = bb.getInt();
@@ -503,6 +506,7 @@ public class LearnerHandler extends Thread {
                         si = new Request(null, sessionId, cxid, type, bb, qp.getAuthinfo());
                     }
                     si.setOwner(this);
+                    // LeaderZooKeeperServer
                     leader.zk.submitRequest(si);
                     break;
                 default:

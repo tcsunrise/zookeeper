@@ -244,6 +244,8 @@ public class Leader {
                         Socket s = ss.accept();
                         // start with the initLimit, once the ack is processed
                         // in LearnerHandler switch to the syncLimit
+                        // 这行设置的是 Leader 端与某个 Learner 之间连接的读超时（SO_TIMEOUT）。
+                        // 时长是 tickTime * initLimit，作用是给同步初始阶段留出足够长的读等待时间。
                         s.setSoTimeout(self.tickTime * self.initLimit);
                         s.setTcpNoDelay(nodelay);
                         LearnerHandler fh = new LearnerHandler(s, Leader.this);
@@ -312,6 +314,7 @@ public class Leader {
             // acknowledged
             newLeaderProposal.ackSet.add(self.getId());
 
+            // 等 LeanderHandler 线程塞入 newLeaderProposal 的 ack，收集到足够的 ack
             while (!self.getQuorumVerifier().containsQuorum(newLeaderProposal.ackSet)) {
             //while (newLeaderProposal.ackCount <= self.quorumPeers.size() / 2) {
                 if (self.tick > self.initLimit) {
@@ -359,6 +362,8 @@ public class Leader {
             if (!System.getProperty("zookeeper.leaderServes", "yes").equals("no")) {
                 self.cnxnFactory.setZooKeeperServer(zk);
             }
+
+            // ------------------------------------------------------------------------------------------------------//
             // Everything is a go, simply start counting the ticks
             // WARNING: I couldn't find any wait statement on a synchronized
             // block that would be notified by this notifyAll() call, so
@@ -371,6 +376,7 @@ public class Leader {
             boolean tickSkip = true;
 
             // loop
+            // 一个tick内收集不到quorum，当前loop退出，peer成为looking ,重新选举
             while (true) {
                 Thread.sleep(self.tickTime / 2);
                 if (!tickSkip) {
@@ -503,6 +509,7 @@ public class Leader {
                     + " is " + p.ackSet.size());
         }
 
+        // 达到 quorum
         if (self.getQuorumVerifier().containsQuorum(p.ackSet)) {
             if (zxid != lastCommitted+1) {
                 LOG.warn("Commiting zxid 0x" + Long.toHexString(zxid)
@@ -515,7 +522,7 @@ public class Leader {
                 toBeApplied.add(p);
             }
             // We don't commit the new leader proposal
-            if ((zxid & 0xffffffffL) != 0) {
+            if ((zxid & 0xffffffffL) != 0) { // 非 NEWLEADER 提议
                 if (p.request == null) {
                     LOG.warn("Going to commmit null: " + p);
                 }
@@ -529,7 +536,7 @@ public class Leader {
                 }
                 return;
             }
-            else {
+            else { // NEWLEADER 提议，启动zks
                 lastCommitted = zxid;
                 if(LOG.isInfoEnabled()){
                     LOG.info("Have quorum of supporters; starting up and setting last processed zxid: " + zk.getZxid());

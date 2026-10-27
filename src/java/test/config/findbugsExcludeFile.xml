@@ -90,6 +90,13 @@
      <Field name="lastProposed"/>
      <Bug code="IS"/>
   </Match>
+  <!-- logicalclock is only written by the QuorumPeer thread (lookForLeader),
+       so the volatile increment cannot lose updates; see the field comment -->
+  <Match>
+    <Class name="org.apache.zookeeper.server.quorum.FastLeaderElection"/>
+    <Field name="logicalclock"/>
+    <Bug pattern="VO_VOLATILE_INCREMENT"/>
+  </Match>
   <Match>
      <Class name="org.apache.zookeeper.server.quorum.LearnerSessionTracker"/>
        <Bug code="UrF"/>

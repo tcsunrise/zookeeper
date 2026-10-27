@@ -60,15 +60,19 @@ import javax.annotation.concurrent.GuardedBy;
 public class ZKDatabase {
     
     private static final Logger LOG = Logger.getLogger(ZKDatabase.class);
-    
+
+    // ------------------------------------- dataTree ------------------------------------//
     /**
      * make sure on a clear you take care of 
      * all these members.
      */
     protected DataTree dataTree;
+    // ------------------------------------- sessions ------------------------------------//
     protected ConcurrentHashMap<Long, Integer> sessionsWithTimeouts;
+
     protected FileTxnSnapLog snapLog;
 
+    // ----------------------------------- committedLog -----------------------------------//
     @GuardedBy("logLock")
     protected long minCommittedLog, maxCommittedLog; // zxid
     public static final int commitLogCount = 500;
@@ -82,6 +86,7 @@ public class ZKDatabase {
     @GuardedBy("logLock")
     protected LinkedList<Proposal> committedLog = new LinkedList<Proposal>();
     protected ReentrantReadWriteLock logLock = new ReentrantReadWriteLock();
+
     volatile private boolean initialized = false;
     
     /**
@@ -114,8 +119,7 @@ public class ZKDatabase {
     public void clear() {
         minCommittedLog = 0;
         maxCommittedLog = 0;
-        /* to be safe we just create a new 
-         * datatree.
+        /* to be safe we just create a new datatree.
          */
         dataTree = new DataTree();
         sessionsWithTimeouts.clear();

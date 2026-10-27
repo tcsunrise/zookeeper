@@ -254,6 +254,7 @@ public class QuorumPeer extends Thread implements QuorumStats.Provider {
      *
      *
      */
+    @Deprecated //
     class ResponderThread extends Thread {
         ResponderThread() {
             super("ResponderThread");

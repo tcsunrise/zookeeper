@@ -289,9 +289,10 @@ public class Learner {
         QuorumPacket ack = new QuorumPacket(Leader.ACK, 0, null, null);
         QuorumPacket qp = new QuorumPacket();
         
-        readPacket(qp);   
+        readPacket(qp);// 决定如何从 Leader 同步
         LinkedList<PacketInFlight> packetsNotCommitted = new LinkedList<PacketInFlight>();
         synchronized (zk) {
+
             if (qp.getType() == Leader.DIFF) {
                 LOG.info("Getting a diff from the leader 0x" + Long.toHexString(qp.getZxid()));                
             }
@@ -306,7 +307,8 @@ public class Learner {
                     LOG.error("Missing signature. Got " + signature);
                     throw new IOException("Missing signature");                   
                 }
-            } else if (qp.getType() == Leader.TRUNC) {
+            }
+            else if (qp.getType() == Leader.TRUNC) {
                 //we need to truncate the log to the lastzxid of the leader
                 LOG.warn("Truncating log to get in sync with the leader 0x"
                         + Long.toHexString(qp.getZxid()));
@@ -325,6 +327,7 @@ public class Learner {
                 System.exit(13);
 
             }
+
             zk.getZKDatabase().setlastProcessedZxid(qp.getZxid());
             zk.createSessionTracker();
             if(LOG.isInfoEnabled()){

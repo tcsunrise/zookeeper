@@ -68,7 +68,8 @@ public class ProposalRequestProcessor implements RequestProcessor {
 
         if (request instanceof LearnerSyncRequest) {
             zks.getLeader().processSync((LearnerSyncRequest) request);
-        } else {
+        }
+        else {
             nextProcessor.processRequest(request);
             if (request.hdr != null) {
                 // We need to sync and get consensus on any transactions
