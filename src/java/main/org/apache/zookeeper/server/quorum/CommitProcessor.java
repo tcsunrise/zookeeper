@@ -83,15 +83,18 @@ public class CommitProcessor extends Thread implements RequestProcessor {
                 toProcess.clear();
 
                 synchronized (this) {
-                    if ((queuedRequests.size() == 0
-                            || nextPending != null) && committedRequests.size() == 0) {
+                    if (
+                            (queuedRequests.size() == 0 || nextPending != null) && committedRequests.size() == 0
+                    ) {
                         wait();
                         continue;
                     }
+
                     // First check and see if the commit came in for the pending
                     // request
-                    if ((queuedRequests.size() == 0 || nextPending != null)
-                            && committedRequests.size() > 0) {
+                    if (
+                            (queuedRequests.size() == 0 || nextPending != null) && committedRequests.size() > 0
+                    ) {
                         Request r = committedRequests.remove();
                         /*
                          * We match with nextPending so that we can move to the
@@ -175,6 +178,7 @@ public class CommitProcessor extends Thread implements RequestProcessor {
     }
 
     // process request client  -> queuedRequests
+    @Override
     synchronized public void processRequest(Request request) {
         // request.addRQRec(">commit");
         if (LOG.isDebugEnabled()) {
@@ -187,6 +191,7 @@ public class CommitProcessor extends Thread implements RequestProcessor {
         }
     }
 
+    @Override
     public void shutdown() {
         synchronized (this) {
             finished = true;

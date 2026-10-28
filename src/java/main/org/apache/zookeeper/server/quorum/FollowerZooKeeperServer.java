@@ -70,20 +70,23 @@ public class FollowerZooKeeperServer extends LearnerZooKeeperServer {
 
     @Override
     protected void setupRequestProcessors() {
+        // follower 的两路 processor：
 
+        //(1) client processor chain:
         RequestProcessor finalProcessor = new FinalRequestProcessor(this);
         commitProcessor = new CommitProcessor(finalProcessor, Long.toString(getServerId()), true);
         commitProcessor.start();
         firstProcessor = new FollowerRequestProcessor(this, commitProcessor);
         ((FollowerRequestProcessor) firstProcessor).start();
 
-        syncProcessor = new SyncRequestProcessor(this,
-                new SendAckRequestProcessor((Learner)getFollower()));
+        //(2) leader proposal chain:
+        syncProcessor = new SyncRequestProcessor(this, new SendAckRequestProcessor((Learner)getFollower()));
         syncProcessor.start();
     }
     
     LinkedBlockingQueue<Request> pendingTxns = new LinkedBlockingQueue<Request>();
 
+    // quorum leader proposal 入口
     public void logRequest(TxnHeader hdr, Record txn) {
         Request request = new Request(null, hdr.getClientId(), hdr.getCxid(),
                 hdr.getType(), null, null);

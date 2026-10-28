@@ -580,12 +580,12 @@ public class Leader {
          * 
          * @see org.apache.zookeeper.server.RequestProcessor#processRequest(org.apache.zookeeper.server.Request)
          */
+        @Override
         public void processRequest(Request request) throws RequestProcessorException {
             // request.addRQRec(">tobe");
             next.processRequest(request);
             Proposal p = toBeApplied.peek();
-            if (p != null && p.request != null
-                    && p.request.zxid == request.zxid) {
+            if (p != null && p.request != null && p.request.zxid == request.zxid) {
                 toBeApplied.remove();
             }
         }
@@ -595,6 +595,7 @@ public class Leader {
          * 
          * @see org.apache.zookeeper.server.RequestProcessor#shutdown()
          */
+        @Override
         public void shutdown() {
             next.shutdown();
         }

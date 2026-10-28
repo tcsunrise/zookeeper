@@ -493,7 +493,7 @@ public class LearnerHandler extends Thread {
                     qp.setData(bos.toByteArray());
                     queuedPackets.add(qp);
                     break;
-                case Leader.REQUEST: // 处理 learner 转发的写请求
+                case Leader.REQUEST: // 处理 learner 转发的事务请求
                     bb = ByteBuffer.wrap(qp.getData());
                     sessionId = bb.getLong();
                     cxid = bb.getInt();
