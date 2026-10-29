@@ -48,7 +48,9 @@ QuorumVerifier 接口只有两个方法。
 提示：注意 quorumVerifier 的创建与 servers.putAll(observers) 这两行的先后顺序。
 
 【我的答案】
-
+(1) long getWeight(long id); boolean containsQuorum(HashSet<Long> set);
+(2) n是非observer的数量；此时不包含observer
+(3) QuorumMaj.half = 2;至少3个
 
 
 --------------------------------------------------
@@ -59,7 +61,10 @@ QuorumVerifier 接口只有两个方法。
 提示：Vote 构造参数里用到了 getLastLoggedZxid()。
 
 【我的答案】
-
+(1) QuorumPeer#start() 是当前节点的启动入口，QuorumPeer是单独一个线程。先加载ZKDatabase，然后启动客户端连接工厂；
+启动选举并启动QuorumPeer线程，执行run()中的主体逻辑；
+(2) currentVote = new Vote(myid, getLastLoggedZxid()); zkDb.loadDataBase()  执行了之后，才能获取启动时最新的zxid；
+getLastLoggedZxid也加上了!zkDb.isInitialized()作为兜底，确保获取最新zxid前，数据已经初始化。
 
 
 --------------------------------------------------
@@ -71,6 +76,14 @@ QuorumPeer#run() 的 while(running) 主循环是一个状态机。
 (3) 字段 follower / leader / observer 在什么时候被置为非 null、什么时候置回 null？getActiveServer() 依赖它们做什么？
 
 【我的答案】
+(1)
+LOOKING:lookForLeader()
+OBSERVING: observeLeader();
+FOLLOWING: followLeader();
+LEADING: lead();
+(2) 将当前节点置为LOOKING状态，从头开始，启动新一轮选举。
+(3) 选举结果出来时，本节点的角色已经定下来时置为非null，当当前Leader发生变化，要重新选举时，置为null；
+getActiveServer依赖它们来决定当前的zks类型。
 
 
 
@@ -86,7 +99,20 @@ QuorumPeer#run() 的 while(running) 主循环是一个状态机。
 提示：注意 SendWorker#run 刚启动时会先做一件"补发"的事。
 
 【我的答案】
-
+FastLeaderElection的核心方法在lookForLeader()，内部有一个主循环。
+FastLeaderElection发选票时：
+(1) 封装ToSend，包括当前选择的主节点和zxid和当前节点的状态，并放到sendqueue队列有WorkerSender线程消费；
+(2) 发送线程WorkerSender从队列中取出ToSend，封装为ByteBuffer，并提交给QuorumCnxManager的toSend方法；
+(3)
+// 保存从当前节点到其它各个节点的发送线程和TCP连接，key是sid
+final ConcurrentHashMap<Long, SendWorker> senderWorkerMap;
+// 每个连接一个队列，用于保存需要发送的消息，key是sid
+final ConcurrentHashMap<Long, ArrayBlockingQueue<ByteBuffer>> queueSendMap;
+// 记录发送给每个节点的最后一条消息，key是sid，用于补发
+final ConcurrentHashMap<Long, ByteBuffer> lastMessageSent;
+(4) initiateConnection 建连时，首先写当前节点的sid，用于对方判断是否重新建立连接；因为集群连接遵循从大sid发起的规则
+(5) 消息长度+消息体
+(6) 先读消息长度，然后安装长度读取消息体，放到recvQueue
 
 
 --------------------------------------------------
@@ -98,6 +124,14 @@ QuorumPeer#run() 的 while(running) 主循环是一个状态机。
 (3) ServerState.LOOKING 映射成的字符串是什么？
 
 【我的答案】
+(1) ServerStats org.apache.zookeeper.server.ZooKeeperServer.serverStats
+接口  ServerStats.Provider，各个角色对应的ZooKeeperServer来实现;
+org.apache.zookeeper.server.quorum.LeaderZooKeeperServer.getState 返回 "leader"
+(2)
+* 号表示对应的Peer已经和当前leader建立连接，并且已经完成数据初始化同步startForwarding
+org.apache.zookeeper.server.quorum.Leader.isLearnerSynced
+(3) org.apache.zookeeper.server.quorum.QuorumPeer.getServerState
+leaderelection
 
 
 
@@ -111,9 +145,27 @@ QuorumPeer#run() 的 while(running) 主循环是一个状态机。
 (4) Leader / Learner 中 tickTime 与 initLimit、syncLimit 是如何组合成具体超时时间的？各举一处代码位置。
 
 【我的答案】
+(1) org/apache/zookeeper/server/quorum/QuorumPeerConfig.java:206,(parts.length == 4)分支
+port1：addr、port2：electionAddr、type：type
+port1  集群数据同步
+port2  选举
+(2) org.apache.zookeeper.server.quorum.QuorumPeerConfig.parseProperties;new File(dataDir, "myid")
+(3) minSessionTimeout ， maxSessionTimeout 默认都是-1
+一致性：minSessionTimeout > maxSessionTimeout
+    public int getMinSessionTimeout() { return minSessionTimeout; }
+    public int getMaxSessionTimeout() { return maxSessionTimeout; }
+(4)
+Leader:
+LearnerCnxAcceptor
+s.setSoTimeout(self.tickTime * self.initLimit);
+LearnerHandler
+sock.setSoTimeout(leader.self.tickTime * leader.self.syncLimit);
 
-
-
+Learner
+connectToLeader
+sock.setSoTimeout(self.tickTime * self.initLimit);
+syncWithLeader
+sock.setSoTimeout(self.tickTime * self.syncLimit);
 --------------------------------------------------
 
 第 8 题 [场景分析] ★★
@@ -124,9 +176,19 @@ QuorumPeer#run() 的 while(running) 主循环是一个状态机。
 提示：比较 sid 与 self.getId() 的那两处 if。
 
 【我的答案】
+(1) sid3->sid1
+QuorumCnxManager#initiateConnection
+sid3->sid1，连接保留
+sid1->sid3，连接关闭，等sid3->sid1
+QuorumCnxManager#receiveConnection
+sid3->sid1，连接保留
+sid1->sid3，关闭收到的连接，发起sid3->sid1
+(2)
+sid=3关闭收到的连接，重新发起到sid=1的连接
 
-
-
+(3)
+sid = observerCounter--;
+链接数量不断增长senderWorkerMap
 --------------------------------------------------
 
 第 9 题 [场景分析] ★★★
@@ -144,9 +206,25 @@ zoo.cfg 中配置了分层 Quorum：
 提示：docs/zookeeperHierarchicalQuorums.html 可对照阅读。
 
 【我的答案】
+group.1=1:2:3
+group.2=4:5:6
+group.3=7:8:9
 
+group.1=3
+group.2=3
+group.3=3
 
+A：ok group.1 和 group.2
+B: no group.1
+C: ok group.1 和 group.2
 
+(2)
+numGroups--
+numGroups=2
+majGroupCounter > (numGroups / 2)
+majGroupCounter=1
+B 不变
+(3) 分层 Quorum 下"存活机器数多"一定比"存活机器数少"更容易形成 quorum 吗？ NO
 --------------------------------------------------
 
 第 10 题 [设计思考] ★★★
@@ -160,5 +238,234 @@ QuorumCnxManager 的设计中有几处"看起来不严谨"的取舍：
 (3) toSend 里 "containsKey → put" 两步不是原子的，在什么并发情况下可能出问题？你会如何改进？
 
 【我的答案】
+(1) bq.take()之后会加上最新的消息；ROPOSAL/COMMIT 同步通道不可以
+(2) 重发最后一条消息解决 发送时连接断掉等，
+(3) toSend目前只有线程单线程调用，多线程情况下会出现race condition
+java.util.concurrent.ConcurrentMap.putIfAbsent
 
 
+==================== 批改 ====================
+批改日期：2026-10-29
+总分：70/100（每题 10 分）
+
+第 1 题：9/10 —— 基本正确
+点评：
+    (1)(2) 完整，还引用了 QuorumPeerConfig 中 peerType 的解析代码，很好。
+    (3) 结论正确（只在 LOOKING ↔ OBSERVING 之间切换），
+        但依据只说了 run() 的 finally 回到 LOOKING，
+        没有说清"为什么选举结束后进入的是 OBSERVING，而不是 FOLLOWING/LEADING"。
+        真正的决定点在 FastLeaderElection。
+参考答案：
+    - ServerState = LOOKING / FOLLOWING / LEADING / OBSERVING，运行时随选举结果变化。
+    - LearnerType = PARTICIPANT / OBSERVER，
+      由 zoo.cfg 的 peerType 或 server.N 的第 4 段 :observer 决定，基本不变。
+    - observer 节点：
+      FastLeaderElection#learningState() 在 learnerType != PARTICIPANT 时直接返回 ServerState.OBSERVING；
+      getInitId() / getInitLastLoggedZxid() 对非 PARTICIPANT 返回 Long.MIN_VALUE，
+      所以 observer 不会投自己，也不会被别人选中，永远不会进入 LEADING/FOLLOWING。
+    - observeLeader() 返回或抛异常后，finally 把 state 置回 LOOKING。
+
+第 2 题：10/10 —— 正确
+点评：
+    三问都答对。
+参考答案：
+    (1) long getWeight(long id)
+        boolean containsQuorum(HashSet<Long> set)
+    (2) QuorumPeerConfig#parseProperties 中
+        quorumVerifier = new QuorumMaj(servers.size()) 在 servers.putAll(observers) 之前执行，
+        n 只算 participant。
+    (3) 5 个 participant 时 half = 5/2 = 2；
+        containsQuorum 判断 set.size() > 2，至少 3 个 sid。
+
+第 3 题：6/10 —— 部分正确
+点评：
+    start() 的 4 个步骤和"为什么先 loadDataBase"都答对了。
+    startLeaderElection() 只展开了 currentVote，漏了：
+        - myQuorumAddr 的确定；
+        - electionType=3 时 QuorumCnxManager 和 Listener 的创建与启动。
+    这两点正是题目要求的。
+参考答案：
+    - start()：
+        zkDb.loadDataBase()
+        → cnxnFactory.start()
+        → startLeaderElection()
+        → super.start()（启动 QuorumPeer 线程，执行 run()）
+    - startLeaderElection()：
+        ① currentVote = new Vote(myid, getLastLoggedZxid())；
+        ② 遍历 getView()，取 id == myid 的 QuorumServer.addr 作为 myQuorumAddr，
+           找不到时抛 RuntimeException("My id ... not in the peer list")；
+        ③ electionType == 0 时额外创建 UDP DatagramSocket 和 ResponderThread；
+        ④ this.electionAlg = createElectionAlgorithm(electionType)。
+           electionType=3 分支：new QuorumCnxManager(this)
+           → 取出 qcm.listener 并 start()（绑定 electionAddr 端口并 accept）
+           → new FastLeaderElection(this, qcm)。
+    - 必须先 loadDataBase：
+        Vote 里的 zxid 来自 getLastLoggedZxid()。
+        如果在加载数据前取，得到的不是磁盘上的最新 zxid，
+        选票里的 zxid 偏小，可能选出数据较旧的 leader。
+
+第 4 题：6/10 —— 部分正确
+点评：
+    (1) 只写了阻塞方法，漏了 make* 工厂方法和 setXxx 赋值；
+    (2) 只答了"回到 LOOKING"，漏了 finally 里的 shutdown 与 setXxx(null)，
+        也没说清为什么必须回 LOOKING；
+    (3) 方向对，但缺少具体位置。
+参考答案：
+    (1) LOOKING：  setCurrentVote(makeLEStrategy().lookForLeader())
+        OBSERVING：setObserver(makeObserver(logFactory)) → observer.observeLeader()
+        FOLLOWING：setFollower(makeFollower(logFactory)) → follower.followLeader()
+        LEADING：  setLeader(makeLeader(logFactory)) → leader.lead()
+    (2) finally 中：
+        - OBSERVING/FOLLOWING：observer.shutdown() / follower.shutdown()，再 setXxx(null)；
+        - LEADING：若 leader != null，则 leader.shutdown("Forcing shutdown") 并 setLeader(null)；
+        - 三个分支最后都 setPeerState(LOOKING)。
+        原因：
+        observeLeader / followLeader / lead 正常情况下一直阻塞，
+        返回就说明与 leader 的连接断了，或 leader 失去了过半 follower；异常同理。
+        此时本节点的角色已经失效，必须清理旧角色的 zk 和处理链，重新选举。
+    (3) setXxx(makeXxx(...)) 时变为非 null；finally 中置回 null
+        （LEADING 分支在 lead() 正常返回后也会先 setLeader(null)）。
+        getActiveServer() 按 leader → follower → observer 的顺序返回对应的 xxx.zk，
+        即当前角色的 ZooKeeperServer；三个字段都为 null（LOOKING 中）时返回 null。
+
+第 5 题：6/10 —— 部分正确
+点评：
+    答对的部分：
+        发送链路前半段（ToSend → sendqueue → WorkerSender → manager.toSend）、
+        三个 Map 的作用、8 字节 sid、"长度 + 消息体"格式。
+    漏掉的部分：
+        - toSend 中 sid == 自己时的 loopback；
+        - toSend 末尾的 connectOne；
+        - SendWorker#run 启动时补发 lastMessageSent；
+        - RecvWorker 对长度的校验。
+参考答案：
+    - toSend：
+        self.getId() == sid 时不走网络，
+        b.position(0) 后直接 recvQueue.put(new Message(b.duplicate(), sid))，
+        即自己给自己的选票直接放进接收队列；
+        否则把 b 放入 queueSendMap.get(sid)（满了先 take 掉最旧的一条），然后 connectOne(sid)。
+    - connectOne：
+        senderWorkerMap.get(sid) == null 时才建连，连接 electionAddr，再 initiateConnection。
+    - initiateConnection：
+        先写 8 字节 long 的 self.getId()；
+        若对方 sid 更大则关闭自己发起的连接，
+        否则创建 SendWorker / RecvWorker 并放入 senderWorkerMap。
+    - SendWorker#run：
+        先把 lastMessageSent.get(sid) 重发一次；
+        再循环 queueSendMap.get(sid).poll(1000ms)，取到后先 lastMessageSent.put 再 send。
+        send 的报文格式 = 4 字节 int（b.capacity()）+ 消息体。
+    - RecvWorker#run：
+        循环读满 4 字节长度；
+        length <= 0 或 length > PACKETMAXSIZE（1024*1024）时抛 IOException 断开；
+        再读满 length 字节消息体，封装成 Message(message, sid) 放入 recvQueue。
+    - 之后：
+        FastLeaderElection 的 WorkerReceiver 通过 manager.recvQueue.poll(3000ms) 取出，
+        反序列化为 Notification 放入 recvqueue，供 lookForLeader 消费。
+
+第 6 题：7/10 —— 部分正确
+点评：
+    (1) 混淆了两个 Provider：
+        - ServerStats.Provider 由各 ZooKeeperServer 子类实现，
+          "Mode:" 确实来自它（LeaderZooKeeperServer#getState 返回 "leader"），这部分你答对了；
+        - 但题目问的是 QuorumStats.Provider，它由 QuorumPeer 实现
+          （class QuorumPeer extends Thread implements QuorumStats.Provider）。
+    题目本身也有一处不严谨，需要更正：
+        3.3.6 中 stat 命令只输出 zk.serverStats().toString()（NIOServerCnxn），
+        QuorumPeer#quorumStats() 没有任何调用方，
+        所以 QuorumStats.toString 里的 "Leader:/Followers:" 实际不会出现在 stat 输出里。
+    (2)(3) 正确。
+参考答案：
+    (1) QuorumStats 只持有 Provider，getServerState() / getQuorumPeers() 都委托给 provider，
+        实现类是 QuorumPeer。
+    (2) Leader 上遍历 leader.learners，若 leader.isLearnerSynced(fh)
+        （forwardingFollowers 包含该 LearnerHandler，即已完成同步、开始接收转发的提案），
+        就在地址后加 "*"。
+    (3) LOOKING → QuorumStats.Provider.LOOKING_STATE = "leaderelection"。
+
+第 7 题：7/10 —— 部分正确
+点评：
+    (1)(2)(4) 正确，(4) 列得很全。
+    (3) 答错了：
+        -1 是 QuorumPeerConfig 字段的初始值，题目问的是 QuorumPeer 对外返回的默认值；
+        你贴的也是 QuorumPeerConfig 的 getter。
+参考答案：
+    (3) QuorumPeer#getMinSessionTimeout()：minSessionTimeout == -1 时返回 tickTime * 2；
+        QuorumPeer#getMaxSessionTimeout()：maxSessionTimeout == -1 时返回 tickTime * 20。
+        QuorumPeerConfig#parseProperties 校验 minSessionTimeout > maxSessionTimeout 时
+        抛 IllegalArgumentException。
+        注意这里比较的是原始值：只配了 minSessionTimeout=5000、没配 max 时，
+        max 仍是 -1，同样会报错。
+    (4) 补充一处：Learner#connectToLeader 中
+        sock.connect(addr, tickTime * syncLimit) 是连接超时，
+        随后 setSoTimeout(tickTime * initLimit) 是读超时。
+
+第 8 题：6/10 —— 部分正确
+点评：
+    (1)(2) 正确，规则可以一句话概括："只保留 sid 大的一方发起的连接"。
+    (3) 分配方式答对了，但副作用分析不准：senderWorkerMap 并不会因此增长。
+参考答案：
+    (1)(2)
+        - initiateConnection：对方 sid > 自己时，关闭自己发起的连接；
+        - receiveConnection：对方 sid < 自己时，先 finish 掉已有的 SendWorker，
+          关闭收到的连接，再 connectOne(sid) 反向连回去；
+        - 最终只保留 3 → 1 的连接。
+    (3) sid = observerCounter--（从 -1 开始递减）。
+        负数 sid 一定小于 self.getId()，会进入"关闭并 connectOne(sid)"分支；
+        connectOne 发现 quorumPeers 中没有这个负数 sid，打印 "Invalid server id" 后返回。
+        结果是连接被关掉、根本建不起来，每次重连都换一个新的负数 id。
+        另外，3.3.6 中没有任何代码真正发送 OBSERVER_ID，
+        observer 发的都是自己的真实 sid，这段是遗留分支。
+
+第 9 题：8/10 —— 基本正确
+点评：
+    A/B/C 和 (2) 的结论都正确，但题目要求写出计算过程（尤其是整型除法），答案只给了结论；
+    (3) 只答了 NO，没有用本题的例子论证。
+参考答案：
+    每组权重 3，组内过半条件：组内权重 > 3/2 = 1；
+    numGroups = 3，全局条件：majGroupCounter > 3/2 = 1，即至少 2 个组过半。
+    (1) A：g1=2 ✓、g2=2 ✓            → 2 > 1，是 quorum
+        B：g1=3 ✓、g2=1 ✗、g3=1 ✗    → 1 > 1 不成立，不是 quorum
+        C：g1=2 ✓、g2=2 ✓、g3=1 ✗    → 2 > 1，是 quorum
+    (2) groupWeight(g3) = 0，computeGroupWeight 中 numGroups-- 变为 2，numGroups/2 = 1。
+        B：g1 ✓、g2 ✗、g3 权重 0 > 0 不成立 ✗ → 1 > 1 不成立，结论不变。
+    (3) 不一定：B 有 5 台机器却不是 quorum，A 只有 4 台却是。
+        分层 Quorum 看的是"过半的组数"，而不是机器总数，机器集中在一个组里没有帮助。
+
+第 10 题：5/10 —— 部分正确
+点评：
+    三问都只给了结论，缺少原因；
+    (3) "toSend 只有单线程调用"的前提不完整。
+参考答案：
+    (1) 选举中每台机器只关心对方的最新选票，新通知会覆盖旧通知；
+        而且 lookForLeader 在 poll 超时后会 sendNotifications() 或 connectAll() 重发，
+        丢掉旧消息不影响正确性。
+        PROPOSAL/COMMIT 要求可靠、有序、不丢（ZAB 依赖 FIFO 的 TCP 通道），
+        丢一条就会造成数据不一致，所以不能这样做。
+    (2) 连接断开时，最后一条消息可能已经从队列取出、但对端还没收到。
+        新连接建立后，SendWorker 先补发 lastMessageSent，避免这条选票丢失。
+        重复选票可以容忍：lookForLeader 对收到的通知用 totalOrderPredicate 比较，
+        并以 recvset.put(n.sid, ...) 按 sid 覆盖，重复处理同一张选票结果不变（幂等）。
+    (3) toSend 确实只由 WorkerSender 单线程调用，
+        但 queueSendMap 的 containsKey → put 还出现在：
+            - initiateConnection（QuorumPeer 线程经 connectAll/connectOne、WorkerSender 经 connectOne）；
+            - receiveConnection（Listener 线程）。
+        如果 toSend 刚 put 了新队列并放入消息，receiveConnection 同时判断 !containsKey
+        也 put 了一个空队列，就会把 toSend 的队列连同消息一起覆盖掉。
+        改进：统一用 queueSendMap.putIfAbsent(sid, new ArrayBlockingQueue<ByteBuffer>(CAPACITY))，
+        之后再 get。
+
+总结：
+- 掌握较好：
+    QuorumVerifier/QuorumMaj 的计算、ServerState 与 LearnerType 的区别、连接方向规则、
+    tickTime 与 initLimit/syncLimit 的组合、分层 Quorum 的结论判断。
+- 需要加强：
+    答题偏结论，缺少"为什么"和过程；
+    容易混淆同名概念（QuorumStats.Provider vs ServerStats.Provider，
+    QuorumPeerConfig 字段默认值 vs QuorumPeer getter 返回值）；
+    QuorumCnxManager 的边界细节（loopback、补发、长度校验、observer 负数 sid）。
+- 建议复习：
+    QuorumPeer#startLeaderElection / #createElectionAlgorithm
+    QuorumPeer#run 的 finally 分支
+    QuorumCnxManager#toSend / SendWorker#run / RecvWorker#run / #receiveConnection
+    FastLeaderElection#learningState
+    QuorumPeer#getMinSessionTimeout / #getMaxSessionTimeout
