@@ -36,6 +36,7 @@ import org.apache.zookeeper.server.ZooKeeperServer;
  * zookeeper server.
  *
  */
+// ant test-core-java -Dtestcase=ZooKeeperQuotaTest -Djavac.target=1.8
 public class ZooKeeperQuotaTest extends ClientBase {
     private static final Logger LOG = Logger.getLogger(
             ZooKeeperQuotaTest.class);
@@ -55,6 +56,7 @@ public class ZooKeeperQuotaTest extends ClientBase {
     public void testQuota() throws IOException,
         InterruptedException, KeeperException, Exception {
         final ZooKeeper zk = createClient();
+
         final String path = "/a/b/v";
         // making sure setdata works on /
         zk.setData("/", "some".getBytes(), -1);
@@ -70,6 +72,7 @@ public class ZooKeeperQuotaTest extends ClientBase {
         zk.create("/a/b/v/d", "some".getBytes(), Ids.OPEN_ACL_UNSAFE,
                 CreateMode.PERSISTENT);
         ZooKeeperMain.createQuota(zk, path, 1000L, 1000);
+
         // see if its set
         String absolutePath = Quotas.quotaZookeeper + path + "/" + Quotas.limitNode;
         byte[] data = zk.getData(absolutePath, false, new Stat());
@@ -82,6 +85,7 @@ public class ZooKeeperQuotaTest extends ClientBase {
         StatsTrack qst = new StatsTrack(new String(qdata));
         assertTrue("bytes are set", qst.getBytes() == 8L);
         assertTrue("count is set", qst.getCount() == 2);
+
         stopServer();
         startServer();
         stopServer();

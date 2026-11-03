@@ -72,6 +72,8 @@ import org.apache.zookeeper.proto.WatcherEvent;
 import org.apache.zookeeper.server.ByteBufferInputStream;
 import org.apache.zookeeper.server.ZooTrace;
 
+import javax.annotation.concurrent.GuardedBy;
+
 /**
  * This class manages the socket i/o for the client. ClientCnxn maintains a list
  * of available servers to connect to and "transparently" switches servers it is
@@ -119,11 +121,13 @@ public class ClientCnxn {
     /**
      * These are the packets that have been sent and are waiting for a response.
      */
+    @GuardedBy("self")
     private final LinkedList<Packet> pendingQueue = new LinkedList<Packet>();
 
     /**
      * These are the packets that need to be sent.
      */
+    @GuardedBy("self")
     private final LinkedList<Packet> outgoingQueue = new LinkedList<Packet>();
 
     private int nextAddrToTry = 0;
@@ -537,7 +541,8 @@ public class ClientCnxn {
                   }
                   if (p.cb == null) {
                       LOG.warn("Somehow a null cb got to EventThread!");
-                  } else if (p.response instanceof ExistsResponse
+                  }
+                  else if (p.response instanceof ExistsResponse
                           || p.response instanceof SetDataResponse
                           || p.response instanceof SetACLResponse) {
                       StatCallback cb = (StatCallback) p.cb;
@@ -558,7 +563,8 @@ public class ClientCnxn {
                       } else {
                           cb.processResult(rc, clientPath, p.ctx, null);
                       }
-                  } else if (p.response instanceof GetDataResponse) {
+                  }
+                  else if (p.response instanceof GetDataResponse) {
                       DataCallback cb = (DataCallback) p.cb;
                       GetDataResponse rsp = (GetDataResponse) p.response;
                       if (rc == 0) {
@@ -568,7 +574,8 @@ public class ClientCnxn {
                           cb.processResult(rc, clientPath, p.ctx, null,
                                   null);
                       }
-                  } else if (p.response instanceof GetACLResponse) {
+                  }
+                  else if (p.response instanceof GetACLResponse) {
                       ACLCallback cb = (ACLCallback) p.cb;
                       GetACLResponse rsp = (GetACLResponse) p.response;
                       if (rc == 0) {
@@ -578,7 +585,8 @@ public class ClientCnxn {
                           cb.processResult(rc, clientPath, p.ctx, null,
                                   null);
                       }
-                  } else if (p.response instanceof GetChildrenResponse) {
+                  }
+                  else if (p.response instanceof GetChildrenResponse) {
                       ChildrenCallback cb = (ChildrenCallback) p.cb;
                       GetChildrenResponse rsp = (GetChildrenResponse) p.response;
                       if (rc == 0) {
@@ -587,7 +595,8 @@ public class ClientCnxn {
                       } else {
                           cb.processResult(rc, clientPath, p.ctx, null);
                       }
-                  } else if (p.response instanceof GetChildren2Response) {
+                  }
+                  else if (p.response instanceof GetChildren2Response) {
                       Children2Callback cb = (Children2Callback) p.cb;
                       GetChildren2Response rsp = (GetChildren2Response) p.response;
                       if (rc == 0) {
@@ -596,7 +605,8 @@ public class ClientCnxn {
                       } else {
                           cb.processResult(rc, clientPath, p.ctx, null, null);
                       }
-                  } else if (p.response instanceof CreateResponse) {
+                  }
+                  else if (p.response instanceof CreateResponse) {
                       StringCallback cb = (StringCallback) p.cb;
                       CreateResponse rsp = (CreateResponse) p.response;
                       if (rc == 0) {
@@ -608,7 +618,8 @@ public class ClientCnxn {
                       } else {
                           cb.processResult(rc, clientPath, p.ctx, null);
                       }
-                  } else if (p.cb instanceof VoidCallback) {
+                  }
+                  else if (p.cb instanceof VoidCallback) {
                       VoidCallback cb = (VoidCallback) p.cb;
                       cb.processResult(rc, clientPath, p.ctx);
                   }
@@ -624,12 +635,12 @@ public class ClientCnxn {
             p.watchRegistration.register(p.replyHeader.getErr());
         }
 
-        if (p.cb == null) {
+        if (p.cb == null) { // 同步调用
             synchronized (p) {
                 p.finished = true;
                 p.notifyAll();
             }
-        } else {
+        } else { // 异步调用
             p.finished = true;
             eventThread.queuePacket(p);
         }
@@ -750,6 +761,7 @@ public class ClientCnxn {
             ReplyHeader replyHdr = new ReplyHeader();
 
             replyHdr.deserialize(bbia, "header");
+            // pings
             if (replyHdr.getXid() == -2) {
                 // -2 is the xid for pings
                 if (LOG.isDebugEnabled()) {
@@ -761,6 +773,7 @@ public class ClientCnxn {
                 }
                 return;
             }
+            // AuthPacket
             if (replyHdr.getXid() == -4) {
             	 // -4 is the xid for AuthPacket               
                 if(replyHdr.getErr() == KeeperException.Code.AUTHFAILED.intValue()) {
@@ -774,6 +787,7 @@ public class ClientCnxn {
                 }
                 return;
             }
+            // notification
             if (replyHdr.getXid() == -1) {
                 // -1 means notification
                 if (LOG.isDebugEnabled()) {
@@ -801,6 +815,7 @@ public class ClientCnxn {
                 eventThread.queueEvent( we );
                 return;
             }
+
             if (pendingQueue.size() == 0) {
                 throw new IOException("Nothing in the queue, but got "
                         + replyHdr.getXid());
@@ -809,6 +824,7 @@ public class ClientCnxn {
             synchronized (pendingQueue) {
                 packet = pendingQueue.remove();
             }
+
             /*
              * Since requests are processed in order, we better get a response
              * to the first request!
@@ -836,9 +852,11 @@ public class ClientCnxn {
                     LOG.debug("Reading reply sessionid:0x"
                             + Long.toHexString(sessionId) + ", packet:: " + packet);
                 }
-            } finally {
+            }
+            finally {
                 finishPacket(packet);
             }
+
         }
 
         /**
@@ -852,6 +870,7 @@ public class ClientCnxn {
             if (sock == null) {
                 throw new IOException("Socket is null!");
             }
+
             if (sockKey.isReadable()) {
                 int rc = sock.read(incomingBuffer);
                 if (rc < 0) {
@@ -883,6 +902,7 @@ public class ClientCnxn {
                     }
                 }
             }
+
             if (sockKey.isWritable()) {
                 synchronized (outgoingQueue) {
                     if (!outgoingQueue.isEmpty()) {
@@ -900,11 +920,13 @@ public class ClientCnxn {
                     }
                 }
             }
+
             if (outgoingQueue.isEmpty()) {
                 disableWrite();
             } else {
                 enableWrite();
             }
+
             return packetReceived;
         }
 
@@ -1091,8 +1113,10 @@ public class ClientCnxn {
             long now = System.currentTimeMillis();
             long lastHeard = now;
             long lastSend = now;
+
             while (zooKeeper.state.isAlive()) {
                 try {
+
                     if (sockKey == null) {
                         // don't re-establish connection if we are closing
                         if (closing) {
@@ -1102,6 +1126,7 @@ public class ClientCnxn {
                         lastSend = now;
                         lastHeard = now;
                     }
+
                     int idleRecv = (int) (now - lastHeard);
                     int idleSend = (int) (now - lastSend);
                     int to = readTimeout - idleRecv;
@@ -1115,6 +1140,7 @@ public class ClientCnxn {
                                 + " for sessionid 0x"
                                 + Long.toHexString(sessionId));
                     }
+
                     if (zooKeeper.state == States.CONNECTED) {
                         int timeToNextPing = readTimeout/2 - idleSend;
                         if (timeToNextPing <= 0) {
@@ -1133,6 +1159,7 @@ public class ClientCnxn {
                     synchronized (this) {
                         selected = selector.selectedKeys();
                     }
+
                     // Everything below and until we get back to the select is
                     // non blocking, so time is effectively a constant. That is
                     // Why we just have to do this once, here
@@ -1164,7 +1191,8 @@ public class ClientCnxn {
                         }
                     }
                     selected.clear();
-                } catch (Throwable e) {
+                }
+                catch (Throwable e) {
                     if (closing) {
                         if (LOG.isDebugEnabled()) {
                             // closing so this is expected
@@ -1205,20 +1233,21 @@ public class ClientCnxn {
                     }
                 }
             }
+
             cleanup();
             try {
                 selector.close();
             } catch (IOException e) {
                 LOG.warn("Ignoring exception during selector close", e);
             }
+
             if (zooKeeper.state.isAlive()) {
                 eventThread.queueEvent(new WatchedEvent(
                         Event.EventType.None,
                         Event.KeeperState.Disconnected,
                         null));
             }
-            ZooTrace.logTraceMessage(LOG, ZooTrace.getTextTraceLevel(),
-                                     "SendThread exitedloop.");
+            ZooTrace.logTraceMessage(LOG, ZooTrace.getTextTraceLevel(), "SendThread exitedloop.");
         }
 
         private void cleanup() {
@@ -1357,8 +1386,7 @@ public class ClientCnxn {
             if (h.getType() != OpCode.ping && h.getType() != OpCode.auth) {
                 h.setXid(getXid());
             }
-            packet = new Packet(h, r, request, response, null,
-                    watchRegistration);
+            packet = new Packet(h, r, request, response, null, watchRegistration);
             packet.cb = cb;
             packet.ctx = ctx;
             packet.clientPath = clientPath;
